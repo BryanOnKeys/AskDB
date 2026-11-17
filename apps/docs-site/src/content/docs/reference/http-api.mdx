@@ -81,7 +81,7 @@ npx askdb-http --schema-path ./my-app.schema --port 3000 --host 127.0.0.1
 | Flag | Description |
 | --- | --- |
 | `--schema-path <path>` | Server-default schema artifact path. |
-| `--port <n>` | Port to listen on. |
+| `--port <n>` | Port to listen on: an integer from 0 to 65535 (`0` lets the OS pick a free port). |
 | `--host <host>` | Bind address. |
 | `-h`, `--help` | Print the usage and these flags to stdout, then exit with code `0`. It doesn't load the config or start the server. |
 
