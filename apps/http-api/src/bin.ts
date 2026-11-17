@@ -90,6 +90,9 @@ function parseOptions(argv: readonly string[]): CliOptions {
         break;
       case "--port": {
         const raw = readValue(argv, ++i, arg);
+        if (!/^[0-9]+$/.test(raw)) {
+          throw new Error(`Invalid --port: ${raw}`);
+        }
         const port = Number(raw);
         if (!Number.isInteger(port) || port <= 0 || port > 65535) {
           throw new Error(`Invalid --port: ${raw}`);
