@@ -39,7 +39,7 @@ describe("askdb-http startup errors", () => {
     expect(run.stdout).toBe("");
   });
 
-  it.each(["0x50", "0b1010000", "0o120", "1e3", "80.0", "+80", " 80 ", "abc", "0", "65536"])(
+  it.each(["0x50", "0b1010000", "0o120", "1e3", "80.0", "+80", " 80 ", "abc", "65536"])(
     "exits 1 at the flag check for non-decimal --port %s",
     (raw) => {
       scratch = mkdtempSync(join(tmpdir(), "askdb-http-bin-"));
@@ -52,7 +52,7 @@ describe("askdb-http startup errors", () => {
     },
   );
 
-  it.each(["1", "3000", "65535", "080"])(
+  it.each(["0", "1", "3000", "65535", "080"])(
     "passes the flag check for decimal --port %s",
     (raw) => {
       scratch = mkdtempSync(join(tmpdir(), "askdb-http-bin-"));

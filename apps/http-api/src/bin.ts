@@ -94,7 +94,7 @@ function parseOptions(argv: readonly string[]): CliOptions {
           throw new Error(`Invalid --port: ${raw}`);
         }
         const port = Number(raw);
-        if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+        if (!Number.isInteger(port) || port < 0 || port > 65535) {
           throw new Error(`Invalid --port: ${raw}`);
         }
         opts.port = port;
