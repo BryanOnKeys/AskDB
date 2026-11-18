@@ -39,6 +39,31 @@ describe("askdb-http startup errors", () => {
     expect(run.stdout).toBe("");
   });
 
+  it.each(["0x50", "0b1010000", "0o120", "1e3", "80.0", "+80", " 80 ", "abc", "65536"])(
+    "exits 1 at the flag check for non-decimal --port %s",
+    (raw) => {
+      scratch = mkdtempSync(join(tmpdir(), "askdb-http-bin-"));
+      const run = runBin(["--port", raw], scratch);
+      expect(run.status).toBe(1);
+      expect(run.stderr).toContain(`askdb-http: Invalid --port: ${raw}\n`);
+      // The failure is at the flag check, before any config loads.
+      expect(run.stderr).not.toContain("No askdb.config");
+      expect(run.stdout).toBe("");
+    },
+  );
+
+  it.each(["0", "1", "3000", "65535", "080"])(
+    "passes the flag check for decimal --port %s",
+    (raw) => {
+      scratch = mkdtempSync(join(tmpdir(), "askdb-http-bin-"));
+      const run = runBin(["--port", raw], scratch);
+      expect(run.status).toBe(1);
+      // Reaching the config load proves the flag check passed.
+      expect(run.stderr).toMatch(/^askdb-http: No askdb\.config\.\* .*\n$/);
+      expect(run.stdout).toBe("");
+    },
+  );
+
   it("prints one line and exits 1 when the config sets an out-of-range httpApi.requestTimeoutMs", () => {
     scratch = mkdtempSync(join(tmpdir(), "askdb-http-bin-"));
     // So `import "@askdb/config"` in askdb.config.ts resolves when askdb-http loads it.
