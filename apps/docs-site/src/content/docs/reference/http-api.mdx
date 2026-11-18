@@ -100,7 +100,7 @@ An installed `askdb-http` reads only the working directory's `.env`, and it neve
 
 `askdb-http` prints an error to stderr and exits with code `1` when:
 
-- **A flag is wrong.** That means an unknown flag. It also means a value flag (`--schema-path`, `--port`, `--host`) with no value or with a value that starts with `--`. And it means a `--port` that isn't a whole number from 1 to 65535. `askdb-http` prints the error, such as `askdb-http: Unknown option: --verbose` or `askdb-http: Invalid --port: 70000`, then the help text. It checks every flag before it reads `.env` or the config. It also checks them before it acts on `--help`, so a wrong flag beside `--help` exits with code `1` too.
+- **A flag is wrong.** That means an unknown flag. It also means a value flag (`--schema-path`, `--port`, `--host`) with no value or with a value that starts with `--`. And it means a `--port` that isn't a whole number from 0 to 65535. `askdb-http` prints the error, such as `askdb-http: Unknown option: --verbose` or `askdb-http: Invalid --port: 70000`, then the help text. It checks every flag before it reads `.env` or the config. It also checks them before it acts on `--help`, so a wrong flag beside `--help` exits with code `1` too.
 - **It can't load its config:** no `askdb.config.*` found, or an invalid value such as an out-of-range `httpApi.requestTimeoutMs`. The error is one line.
 - **It can't bind:** for example, the port is already in use. The error is one line.
 

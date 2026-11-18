@@ -133,7 +133,7 @@ function printHelp(stream: NodeJS.WriteStream): void {
       "",
       "Options:",
       "  --schema-path <path>  Server-default schema artifact path",
-      "  --port <number>       Port to listen on",
+      "  --port <number>       Port to listen on (0-65535; 0 picks a free port)",
       "  --host <host>         Host to bind",
       "  -h, --help            Print this help",
       "",
