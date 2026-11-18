@@ -1,7 +1,8 @@
 ---
 /**
  * The page footer: Starlight's edit link and previous/next links, then one quiet row with the
- * machine-readable entry points for coding agents and the copyright line.
+ * machine-readable entry points for coding agents and the author's byline and the
+ * copyright year.
  */
 import Default from "@astrojs/starlight/components/Footer.astro";
 import { withBase } from "../../utils/links";
@@ -16,8 +17,9 @@ import { withBase } from "../../utils/links";
 		<a href={withBase("/llms.txt")}>llms.txt</a>
 		<a href={withBase("/AGENTS.md")}>AGENTS.md</a>
 	</p>
-	<p>
-		© {new Date().getFullYear()} <a href="https://yahyagilany.io">Yahya Gilany</a>
+	<p class="by">
+		<span>Built by <a href="https://yahyagilany.io">Yahya Gilany</a></span>
+		<span>© {new Date().getFullYear()}</span>
 	</p>
 </div>
 
@@ -52,6 +54,13 @@ import { withBase } from "../../utils/links";
 		font-family: var(--__sl-font-mono);
 		font-size: 0.6875rem;
 		padding: 0.0625rem 0.5rem;
+	}
+
+	.by {
+		align-items: center;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem 1rem;
 	}
 
 	.site-foot a {

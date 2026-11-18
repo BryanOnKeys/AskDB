@@ -151,6 +151,8 @@ export default defineConfig({
         PageTitle: "./src/components/overrides/PageTitle.astro",
         ThemeSelect: "./src/components/ThemeSelect.astro",
         Footer: "./src/components/overrides/Footer.astro",
+        // The 1.0 release-candidate announcement bar; remove when the launch is over.
+        Banner: "./src/components/overrides/Banner.astro",
         // Starlight's skip link, after a sentence that tells an AI agent where the Markdown is.
         SkipLink: "./src/components/overrides/SkipLink.astro",
       },
