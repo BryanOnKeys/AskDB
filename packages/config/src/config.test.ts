@@ -1123,6 +1123,57 @@ describe("bootstrapAskDbEnv", () => {
     else process.env.MY_DB = prevDb;
   });
 
+  it.each(["missing", "unreadable"])(
+    "loads the supplied cwd's .env and reports its path when the candidate is %s",
+    (candidate) => {
+      dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
+      const processDir = join(dir, "process");
+      mkdirSync(processDir);
+      const candidatePath = join(dir, "candidate.env");
+      if (candidate === "unreadable") mkdirSync(candidatePath);
+      writeFileSync(join(processDir, ".env"), "MY_AI=process-key\n", "utf8");
+      writeFileSync(join(dir, ".env"), "MY_AI=project-key\n", "utf8");
+      writeFileSync(
+        join(dir, "askdb.config.cjs"),
+        `module.exports = ${JSON.stringify(minimalConfig())};`,
+        "utf8",
+      );
+      const cwd = vi.spyOn(process, "cwd").mockReturnValue(processDir);
+      delete process.env.MY_AI;
+      try {
+        const result = bootstrapAskDbEnv({
+          cwd: dir,
+          dotenvCandidatePaths: [candidatePath],
+        });
+        expect(process.env.MY_AI).toBe("project-key");
+        expect(result.dotenvPath).toBe(join(dir, ".env"));
+      } finally {
+        cwd.mockRestore();
+      }
+    },
+  );
+
+  it("keeps the first loaded candidate and preserves an existing environment value", () => {
+    dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
+    const candidatePath = join(dir, "candidate.env");
+    writeFileSync(candidatePath, "MY_AI=candidate-key\nMY_DB=candidate-db\n", "utf8");
+    writeFileSync(join(dir, ".env"), "MY_AI=fallback-key\nMY_DB=fallback-db\n", "utf8");
+    writeFileSync(
+      join(dir, "askdb.config.cjs"),
+      `module.exports = ${JSON.stringify(minimalConfig())};`,
+      "utf8",
+    );
+    process.env.MY_AI = "existing-key";
+    delete process.env.MY_DB;
+    const result = bootstrapAskDbEnv({
+      cwd: dir,
+      dotenvCandidatePaths: [join(dir, "missing.env"), candidatePath],
+    });
+    expect(result.dotenvPath).toBe(candidatePath);
+    expect(process.env.MY_AI).toBe("existing-key");
+    expect(process.env.MY_DB).toBe("candidate-db");
+  });
+
   it("loads .env then installs runtime from nested askdb.config", () => {
     dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
     linkWorkspacePackage(dir);

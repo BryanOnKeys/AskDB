@@ -110,10 +110,10 @@ Options, `BootstrapAskDbEnvOptions`:
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `cwd` | `string` | `process.cwd()` | Where to look for the config file and the default `.env`. |
-| `dotenvCandidatePaths` | `readonly string[]` | none | `.env` files to try in order. The first one that exists and loads wins; one that fails to load is skipped without a report. When none loads, the `.env` in the process's working directory is tried. Without this option, only `<cwd>/.env` is read. |
+| `dotenvCandidatePaths` | `readonly string[]` | none | `.env` files to try in order. The first one that exists and loads wins; one that fails to load is skipped without a report. When none loads, `<cwd>/.env` is tried. Without this option, only `<cwd>/.env` is read. |
 | `dotenvNonFatal` | `boolean` | `true` | What a `.env` that exists but can't be read does, such as a directory named `.env`. With `true`, `Failed to load .env: <reason>` goes to stderr, `process.exitCode` becomes `1`, and loading goes on. With `false`, it throws that error. A missing `.env` is never an error. |
 
-It returns `{ dotenvPath, configPath }`. `dotenvPath` is the `.env` file it loaded: the first candidate that loaded, or `<cwd>/.env` when you pass no candidates. It's absent when none loaded, and also when the fallback `.env` after the candidates did. `configPath` is the config file.
+It returns `{ dotenvPath, configPath }`. `dotenvPath` is the first candidate that loaded, or `<cwd>/.env` when no candidate loaded or you passed no candidates. It's absent when no `.env` file loaded. `configPath` is the config file.
 
 It throws:
 
