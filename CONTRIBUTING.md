@@ -93,6 +93,7 @@ When it fails, prefer fixing over allowlisting:
 
 | Advisory | Package / path | Why it is not exploitable here | Remove when |
 | --- | --- | --- | --- |
+| GHSA-fc5q-39xc-vjpf | `picomatch` <= 4.0.7 (2.3.2 and 4.0.7 installed) via `@changesets/cli` (release tooling, workspace root), `vitest` and `vite` (workspace root, and the `vitest` devDependency of each `packages/*` package, `apps/cli` and `apps/http-api`), `@tailwindcss/vite` (`apps/studio`) and `astro`, `@astrojs/*`, `starlight-llms-txt` (`apps/docs-site`) | High severity: an attacker-supplied glob such as `+(*)` makes the compiled regex backtrack exponentially against a short string. Every path is build, test, docs or release tooling that compiles the repo's own fixed globs, so no attacker chooses a pattern; `pnpm audit --prod` is clean, so no published package's runtime dependencies reach it (the paths under `packages/*`, `apps/cli` and `apps/http-api` are their `vitest` devDependency). The entries match path strings, which carry no dev/prod marker, so moving one of these roots into a published package's `dependencies` would still pass `pnpm run audit`: run `pnpm audit --prod` when a dependency changes type.. No patched `picomatch` exists on any line, and the latest `vite`, `vitest`, `tinyglobby`, `fdir`, `anymatch` and `micromatch` all still depend on it, so there is nothing to bump or override to. | `picomatch` ships a fixed release: refresh the lockfile (or override to it) and delete these entries |
 
 ## Before Opening a PR
 
