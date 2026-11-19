@@ -1266,7 +1266,7 @@ describe("getAskDbRuntimeConfig — httpApi", () => {
   });
 
   it("rejects any other listen.port when the config loads, naming the key", () => {
-    for (const port of [65536, 70000, -1, 1.5, Infinity, "abc", "", "80.5", true, null]) {
+    for (const port of [65536, 70000, -1, 1.5, Infinity, "abc", "", "80.5", true, null, "0x50", "1e3", "+80", "80.0", "0b1010"]) {
       const httpApi = { listen: { port } } as unknown as AskDbConfig["httpApi"];
       expect(() => defineConfig(minimalConfig({ httpApi }))).toThrow(/askdb\.config: invalid httpApi\.listen\.port/);
     }
