@@ -1,13 +1,30 @@
-// The Studio run global-setup.ts started, for each UI replay.
-import { test as base } from "@playwright/test";
-import { AskdbRun } from "../run.js";
+// Each Studio spec file gets its own run (its own project, ports and Studio), so one screen's
+// saves never change another screen's counts.
+import { test } from "@playwright/test";
+import { AskdbRun, introspectedRun } from "../run.js";
 
-export const test = base.extend<{ run: AskdbRun; studioUrl: string }>({
-  run: async ({}, use) => {
-    await use(AskdbRun.load(process.env.ASKDB_E2E_STUDIO_RUN!));
-  },
-  studioUrl: async ({}, use) => {
-    await use(process.env.ASKDB_E2E_STUDIO_URL!);
-  },
-});
-export { expect } from "@playwright/test";
+export { expect, test } from "@playwright/test";
+
+/**
+ * Register a run for this spec file: by default shop.db introspected into `askdb/` and Studio
+ * started on it. `setup` replaces that, for a run that needs another starting state.
+ */
+export function studioRun(setup?: () => Promise<AskdbRun>): { readonly run: AskdbRun; readonly url: string } {
+  let run: AskdbRun | undefined;
+  test.beforeAll(async () => {
+    run = setup ? await setup() : await introspectedRun();
+    if (!setup) await run.start("studio", "askdb");
+  });
+  test.afterAll(async () => {
+    await run?.cleanup();
+  });
+  return {
+    get run() {
+      if (!run) throw new Error("the run starts in beforeAll");
+      return run;
+    },
+    get url() {
+      return this.run.url("studio");
+    },
+  };
+}

@@ -171,9 +171,14 @@ export default defineConfig({
     return { ...record, evidence };
   }
 
-  /** What the fake model answers from now on. Bare SQL is wrapped in a ```sql block. @param {string} text */
-  modelReply(text) {
-    writeFileSync(join(this.dir, "model-reply.txt"), text.includes("```") ? text : `\`\`\`sql\n${text}\n\`\`\``);
+  /**
+   * What the fake model answers from now on. Bare SQL is wrapped in a ```sql block, as an NL→SQL
+   * reply has it; `raw` sends the text unchanged, for Studio's suggestions (candidates split on
+   * `---` lines) and its tenant-policy draft (JSON).
+   * @param {string} text @param {{ raw?: boolean }} [options]
+   */
+  modelReply(text, { raw = false } = {}) {
+    writeFileSync(join(this.dir, "model-reply.txt"), raw || text.includes("```") ? text : `\`\`\`sql\n${text}\n\`\`\``);
   }
 
   /**
@@ -210,14 +215,20 @@ export default defineConfig({
 
   /**
    * Start the HTTP API or Studio on the run's port. Throws if it is already running.
-   * @param {"api" | "studio"} kind @param {string} [schema] schema folder, relative to the project
+   * @param {"api" | "studio"} kind
+   * @param {string | null} [schema] schema folder, relative to the project. `null` passes none: Studio
+   *   then opens its folder from the config (`./askdb`), or its setup wizard when that doesn't exist.
    */
   async start(kind, schema = "schemas/orders-users-sensitive.schema") {
     if (isOurs(this.state.processes[kind])) throw new Error(`${kind} already running (pid ${this.state.processes[kind].pid}); stop it first.`);
+    const schemaArgs = schema === null ? [] : [kind === "api" ? "--schema-path" : "--schema", schema];
+    // The run's port and host on the command line too: a project without a config (Studio's
+    // setup wizard) would otherwise fall back to the default port and collide with other Studios.
+    const listenArgs = ["--port", String(this.state.ports[kind]), "--host", "127.0.0.1"];
     this.state.processes[kind] =
       kind === "api"
-        ? await this.startProcess("api", [HTTP_API, "--schema-path", schema], "AskDB HTTP API listening on")
-        : await this.startProcess("studio", [CLI, "studio", "--schema", schema], "AskDB Studio is running at");
+        ? await this.startProcess("api", [HTTP_API, ...schemaArgs, ...listenArgs], "AskDB HTTP API listening on")
+        : await this.startProcess("studio", [CLI, "studio", ...schemaArgs, ...listenArgs], "AskDB Studio is running at");
     this.save();
     return this.state.processes[kind];
   }

@@ -43,6 +43,7 @@ vctl setup            # or: vctl setup --live   (real OpenAI: OPENAI_API_KEY in 
 ```bash
 vctl api start [schema-dir]      # ready: "AskDB HTTP API listening on"; default schema: schemas/orders-users-sensitive.schema
 vctl studio start [schema-dir]   # ready: "AskDB Studio is running at"; same default
+vctl studio start --no-schema    # no --schema: Studio opens ./askdb, or its setup wizard when that doesn't exist
 vctl api stop / vctl studio stop
 ```
 
@@ -67,6 +68,7 @@ Run it before the first drive, after any drive that surprised you, and before yo
 
 ```bash
 vctl model reply "SELECT name FROM customers"        # what the fake model answers from now on; bare SQL is fenced for you
+vctl model reply --raw "<text or JSON>"              # unfenced: Studio's suggestions (candidates split on --- lines) and tenant-policy draft (JSON)
 vctl cli --label <name> -- <askdb args>              # e.g. -- ask --question "…"; prints stdout/stderr, exits with askdb's code
 vctl model requests --label <name>                   # saves the prompts the model received
 vctl api-request <METHOD> <path> ['<json>']          # the HTTP API

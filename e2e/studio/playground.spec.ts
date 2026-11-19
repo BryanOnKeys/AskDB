@@ -8,13 +8,14 @@
  * results never rendering), which the server tests can't see.
  * No production seam: it drives the built Studio by role and accessible name only.
  */
-import { expect, test } from "./fixtures.js";
+import { expect, studioRun, test } from "./fixtures.js";
 
 const SQL = "SELECT name, country FROM customers ORDER BY name";
+const studio = studioRun();
 
-test("studio-open, studio-generate, studio-execute: a question becomes SQL, then rows", async ({ page, run, studioUrl }, testInfo) => {
-  run.modelReply(SQL);
-  await page.goto(`${studioUrl}/playground`);
+test("studio-open, studio-generate, studio-execute: a question becomes SQL, then rows", async ({ page }, testInfo) => {
+  studio.run.modelReply(SQL);
+  await page.goto(`${studio.url}/playground`);
 
   // studio-open
   await expect(page.getByRole("heading", { name: "Query Playground" })).toBeVisible();
