@@ -2,11 +2,12 @@
  * Replay of verify-askdb's `studio-overview` feature (.agents/skills/verify-askdb/features/studio-overview.md).
  *
  * Protects: the Overview's cards and pending list on a fresh shop schema, the row and button
- * shortcuts into Tables and Tenancy, and `Resync schema`.
- * Catches: a landing screen that miscounts, or a shortcut that goes nowhere.
+ * shortcuts into Tables and Tenancy, `Resync schema`, and the saved Playground history on load.
+ * Catches: a landing screen that miscounts, a shortcut that goes nowhere, or saved Playground
+ * history that stays hidden until the next ask.
  * No production seam: it drives the built Studio by role and accessible name.
  */
-import { statSync } from "node:fs";
+import { statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, studioRun, test } from "./fixtures.js";
 
@@ -65,4 +66,31 @@ test("overview-resync-status: known bug, Resync's message is lost on reload", as
     .waitFor({ timeout: 3_000 })
     .then(() => true, () => false);
   expect(shown, "Resync's message now shows: the bug is fixed, so assert it instead and drop the gotcha").toBe(false);
+});
+
+test.describe("overview-history: a project with saved Playground history", () => {
+  const QUESTION = "How many customers are in each country?";
+  const seeded = studioRun(async (run) => {
+    const result = run.cli(["introspect", "--engine", "sqlite", "--url", "shop.db", "--out", "askdb"], { label: "introspect-write" });
+    if (result.exitCode !== 0) throw new Error(`introspect failed: ${result.stderr}`);
+    const entry = {
+      id: "seeded-1",
+      timestamp: "2026-11-01T12:00:00.000Z",
+      question: QUESTION,
+      mode: "full",
+      sqlMode: "sql-params",
+      sql: "SELECT country, COUNT(*) FROM customers GROUP BY country",
+    };
+    writeFileSync(join(run.project, "askdb/playground-history.json"), JSON.stringify([entry], null, 2));
+    await run.start("studio", "askdb");
+  });
+
+  test("overview-history: the saved history shows on load, on the Overview and in the Playground", async ({ page }) => {
+    await page.goto(`${seeded.url}/overview`);
+    await expect(page.getByRole("cell", { name: QUESTION })).toBeVisible();
+    await expect(page.getByText("last 1 queries")).toBeVisible();
+    await page.getByRole("link", { name: "Playground" }).click();
+    await expect(page.getByText("History (1)")).toBeVisible();
+    await expect(page.getByText(QUESTION)).toBeVisible();
+  });
 });
