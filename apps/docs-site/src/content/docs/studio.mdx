@@ -24,10 +24,12 @@ Studio also works as the *first* command in a new project. Some directories have
 <Steps>
 
 1. **Pick your database engine and AI provider.** The wizard asks for environment variable *names* only, never secret values. Studio writes `askdb.config.ts` and an `.env.example`, and installs the packages the config needs.
-2. **Add your secrets to `.env` yourself.** The wizard shows which variables to fill in. The values stay on your disk.
+2. **Add your secrets to `.env` yourself.** The wizard shows which variables its config reads. The values stay on your disk.
 3. **Run introspection from the browser.** Studio reads your schema's structure (tables and columns, never rows) and opens the Overview.
 
 </Steps>
+
+With a config but no schema artifact, the wizard skips the `.env` step and starts at introspection. If that config can't load, it shows the error to fix first, and you restart Studio once it's fixed.
 
 `npx askdb init` asks the same questions in the terminal and writes the same files. The [Studio reference](/reference/studio/#guided-setup) says what the wizard writes and installs, and how it picks a package manager.
 

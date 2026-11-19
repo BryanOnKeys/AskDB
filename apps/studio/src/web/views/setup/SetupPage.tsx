@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Wand2 } from "lucide-react";
 import type { SetupConfigResponse, SetupStatusDto } from "@/shared/api";
 import { setupIntrospect, setupWriteConfig } from "../../api";
@@ -52,43 +52,6 @@ export function SetupPage({
   const needsConnectionEnv = CONNECTION_ENV_DEFAULTS[database] !== "";
   const configDone = configAlreadyExists || configResult !== null;
 
-  const envVarsToFill = useMemo(() => {
-    if (configResult) return configResult.envVars;
-    const vars = new Map<string, { name: string; purpose: string; requiredForIntrospection: boolean }>();
-    const add = (v: { name: string; purpose: string; requiredForIntrospection: boolean }) => {
-      if (!v.name || vars.has(v.name)) return;
-      vars.set(v.name, v);
-    };
-    add({ name: aiKeyEnv, purpose: `${aiProvider} API key`, requiredForIntrospection: false });
-    if (aiModelEnv) add({ name: aiModelEnv, purpose: `${aiProvider} model override`, requiredForIntrospection: false });
-    if (needsConnectionEnv) {
-      add({ name: connectionEnv, purpose: `${database} connection URL`, requiredForIntrospection: true });
-    }
-    if (ragStore === "pgvector") {
-      add({ name: pgvectorEnv, purpose: "pgvector connection URL", requiredForIntrospection: false });
-    }
-    if (studioExecuteEnabled) {
-      const effectiveProvider = database === "prisma" ? studioExecuteProvider : (database as SetupExecuteProvider);
-      if (effectiveProvider !== "sqlite") {
-        const envName = database === "prisma" ? studioExecuteConnectionEnv : connectionEnv;
-        add({ name: envName, purpose: `${effectiveProvider} connection URL (Studio execute)`, requiredForIntrospection: false });
-      }
-    }
-    return Array.from(vars.values());
-  }, [
-    configResult,
-    aiKeyEnv,
-    aiProvider,
-    aiModelEnv,
-    needsConnectionEnv,
-    connectionEnv,
-    database,
-    ragStore,
-    pgvectorEnv,
-    studioExecuteEnabled,
-    studioExecuteProvider,
-    studioExecuteConnectionEnv,
-  ]);
 
   const pickDatabase = useCallback((value: SetupDatabase) => {
     setDatabase(value);
@@ -174,8 +137,12 @@ export function SetupPage({
     }
   }, [onComplete]);
 
-  const secretsStep = configAlreadyExists ? 1 : 2;
-  const introspectStep = configAlreadyExists ? 2 : 3;
+  // The .env step lists what a config the wizard just wrote reads. The wizard can't know what a
+  // config it didn't write reads, so an existing config goes straight to introspection (#1050).
+  const introspectStep = configAlreadyExists ? 1 : 3;
+  // `null` means the config loaded; any string, even an empty one, is a load failure.
+  const loadFailed = status.configLoadError !== null;
+  const configFileName = status.configPath?.split(/[\\/]/).pop() ?? "askdb.config.ts";
 
   return (
     <div className="app-shell" style={{ display: "flex", alignItems: "flex-start", justifyContent: "center", overflow: "auto", padding: "48px 16px" }}>
@@ -229,10 +196,29 @@ export function SetupPage({
           />
         )}
 
-        {configDone && <SecretsCard stepNumber={secretsStep} envVars={envVarsToFill} />}
+        {configResult && <SecretsCard stepNumber={2} envVars={configResult.envVars} />}
+
+        {configAlreadyExists && loadFailed && (
+          <div className="card" style={{ borderColor: "var(--red-600)" }} role="alert">
+            <div className="card-bd" style={{ display: "grid", gap: 6 }}>
+              <p style={{ fontSize: 12.5, fontWeight: 600 }}>
+                <code className="mono">{configFileName}</code> couldn't be loaded
+              </p>
+              <p style={{ color: "var(--red-600)", fontSize: 12.5, whiteSpace: "pre-wrap" }}>{status.configLoadError || "No error message."}</p>
+              <p className="muted" style={{ fontSize: 12.5, lineHeight: 1.6 }}>
+                Fix the config, the <code className="mono">.env</code> it reads or a missing package, then restart Studio.
+              </p>
+            </div>
+          </div>
+        )}
 
         {configDone && (
-          <IntrospectCard stepNumber={introspectStep} busy={busy} onIntrospect={() => void handleIntrospect()} />
+          <IntrospectCard
+            stepNumber={introspectStep}
+            busy={busy}
+            disabledReason={loadFailed ? "Fix the config first: introspection reads it." : undefined}
+            onIntrospect={() => void handleIntrospect()}
+          />
         )}
 
         {error && (
