@@ -2,11 +2,12 @@ import { createContext, use, useCallback, useEffect, useEffectEvent, useMemo, us
 import type { ReactNode } from "react";
 import type { ChunkType } from "@askdb/rag";
 import type { RagQueryResponse, StudioRagStatusDto, StudioRequestUsageDto } from "@/shared/api";
+import { STUDIO_CHUNK_TYPES } from "@/shared/rag";
 import { buildRagIndex, getRagStatus, queryRag } from "../api";
 import { formatNumber } from "../lib/format";
 import type { StatusMessage } from "./workspace-context";
 
-const CHUNK_TYPES: ChunkType[] = ["table", "column", "cql", "question", "concept", "relationship", "tenant-policy"];
+const CHUNK_TYPES: ChunkType[] = [...STUDIO_CHUNK_TYPES];
 
 interface RagContextValue {
   ragStatus: StudioRagStatusDto | null;
