@@ -9,7 +9,7 @@ Studio's Overview (`/overview`) is the landing screen for a schema folder: count
 - `overview-shortcuts` sends `Enrich tables` to the first table's Enrichment tab and `Draft tenant policy` to Tenancy. Scripted: `e2e/studio/overview.spec.ts`.
 - `overview-history` lists the saved Playground history under `Recent playground queries` as soon as the page loads, and the Playground shows it under `History`. Scripted: `e2e/studio/overview.spec.ts`.
 - `overview-reflects-state` updates the cards after concepts, an index or a tenant policy are added. Agent-driven.
-- `overview-resync` re-reads the database into `schema.json` with `Resync schema`. Scripted: `e2e/studio/overview.spec.ts`.
+- `overview-resync` re-reads the database into `schema.json` with `Resync schema`, says how many tables it re-read, and keeps unsaved table edits. Scripted: `e2e/studio/overview.spec.ts`.
 
 ## How to get to it (user POV)
 
@@ -27,12 +27,11 @@ Preconditions:
 - **Other sections.** `Recent playground queries` shows `No queries yet`; `RAG index` shows `Chunks` `15`, `Indexed` `0`, `Model` `Mock lexical`, `Updated: never`; `Tenancy` shows `Not configured` and a button `Draft tenant policy`; `Suggested next actions` lists `Add description to customers` and `Build RAG index for retrieval-augmented queries`.
 - **History.** Stop Studio, write `askdb/playground-history.json` with one entry (an array of `{ id, timestamp, question, mode, sqlMode, sql }`), and start it again. `Recent playground queries` lists the question (`last 1 queries`) when the page loads, and the Playground shows `History (1)` with the question, before any ask.
 - **Shortcuts.** Choose `Enrich tables`: Studio opens `/tables`, which lands on `/tables/public/customers/enrichment`. Go back and choose `Draft tenant policy`: Studio opens `/tenancy`.
-- **Resync.** Choose `Resync schema`. Studio sends `POST /api/introspect` (status 200), reloads, and still shows `3 tables to go`; `<project>/askdb/schema.json` has a newer modification time, and `tables/*.md` files are untouched.
+- **Resync.** Choose `Resync schema`. Studio sends `POST /api/introspect` (status 200), shows `Re-introspected 3 tables from sqlite — enrichment preserved.` above the cards, and still shows `3 tables to go`; `<project>/askdb/schema.json` has a newer modification time, and `tables/*.md` files are untouched. An unsaved edit on a table (Tables, change `Tags`, then back to `Overview` through the navigation) is still there, with `Unsaved changes`, after the resync.
 - **Reflects state.** After the [concepts](./studio-concepts.md), [RAG index](./studio-rag-index.md) and [tenancy](./studio-tenancy.md) recipes, the cards read `CONCEPTS` `1` (`1 defined`), `INDEX HEALTH` `Stale` when the index was built before the policy, and `Tenancy` `Configured`.
 
 ## Gotchas
 
 - The `Enrich` entries in `Pending enrichment` aren't links: the whole row is a mouse-only click target, with no keyboard access or link role. Click the row (`row "public.customers …"`); keyboard and screen-reader users can't reach it, which is a product accessibility gap.
 - `Suggested next actions` lists `Rebuild index — tables changed since last build` even before any index exists.
-- `Resync schema` shows no message: its `Re-introspected <n> tables from sqlite — enrichment preserved.` (or an error) is set on the Overview, then the workspace reload swaps the page for App's loading screen and the Overview remounts without it. A product bug, pinned by the replay `overview-resync-status`, which fails once the message shows. Prove a resync by the request and `schema.json`'s modification time.
 - Resync rewrites the `schema.json` of the folder Studio opened from the config's database. On a fixture folder (`schemas/…`) that replaces its tables with the shop's: resync only `askdb`.
