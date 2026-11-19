@@ -1,4 +1,4 @@
-import { useCallback, useReducer, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useReducer, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -34,12 +34,25 @@ export function TenancyPage() {
   } = useWorkspace();
   const { refreshRagStatus } = useRag();
   const [editingSavedPolicy, setEditingSavedPolicy] = useState(false);
+  // Shown on the summary a save opens. It lives here, not in the form, because a save swaps the
+  // form for the summary and the form's own state goes with it (#1051).
+  const [savedStatus, setSavedStatus] = useState<StatusMessage | null>(null);
 
   const onSaveTenantPolicy = useCallback(async (frontmatter: TenantPolicyFrontmatter, body?: string) => {
     const saved = await handleSaveTenantPolicy(frontmatter, body);
-    if (saved) void refreshRagStatus();
+    if (saved) {
+      void refreshRagStatus();
+      setSavedStatus({ kind: "success", text: "Tenant policy saved." });
+    }
     return saved;
   }, [handleSaveTenantPolicy, refreshRagStatus]);
+
+  const clearSavedStatus = useEffectEvent(() => setSavedStatus(null));
+  useEffect(() => {
+    if (!savedStatus) return;
+    const id = setTimeout(() => clearSavedStatus(), 4000);
+    return () => clearTimeout(id);
+  }, [savedStatus]);
 
   if (!workspace) return null;
 
@@ -85,7 +98,8 @@ export function TenancyPage() {
     <main className="main-pane">
       <TenancyView
         tenantPolicy={tenantPolicy}
-        onEdit={() => setEditingSavedPolicy(true)}
+        savedStatus={savedStatus}
+        onEdit={() => { setSavedStatus(null); setEditingSavedPolicy(true); }}
       />
     </main>
   );
@@ -93,9 +107,11 @@ export function TenancyPage() {
 
 function TenancyView({
   tenantPolicy,
+  savedStatus,
   onEdit,
 }: {
   tenantPolicy: NormalizedTenantPolicy;
+  savedStatus: StatusMessage | null;
   onEdit: () => void;
 }) {
   const coverageByClassification = tenantPolicy.coverage.reduce(
@@ -127,6 +143,7 @@ function TenancyView({
           </button>
         </div>
       </div>
+      {savedStatus && <StatusBanner status={savedStatus} />}
       <div className="main-body">
         <div className="stack" style={{ padding: "var(--pad-y) var(--pad-x)" }}>
           <CollapsibleSection title="Coverage">
@@ -308,6 +325,8 @@ function TenancyEditSavedPolicy({
 
 type CreateFormState = ManualTenantPolicyForm & {
   mode: "choose" | "manual" | "review";
+  /** Set once the user types a label, so picking another root table no longer replaces it (#1055). */
+  rootLabelTouched: boolean;
   draftStatus: StatusMessage | null;
   draftFrontmatter: TenantPolicyFrontmatter | null;
   draftBody: string;
@@ -331,17 +350,19 @@ type CreateFormAction =
 
 function createFormReducer(state: CreateFormState, action: CreateFormAction): CreateFormState {
   switch (action.type) {
-    case "set_mode": return { ...state, mode: action.payload };
+    // A status belongs to the screen it was set on: "AI draft ready" shouldn't follow Start Over back.
+    case "set_mode": return { ...state, mode: action.payload, draftStatus: null };
     case "set_draftStatus": return { ...state, draftStatus: action.payload };
     case "set_draftFrontmatter": return { ...state, draftFrontmatter: action.payload };
     case "set_draftBody": return { ...state, draftBody: action.payload };
     case "set_enforcement": return { ...state, enforcement: action.payload };
     case "set_rootTenantIdColumn": return { ...state, rootTenantIdColumn: action.payload };
-    case "set_rootLabel": return { ...state, rootLabel: action.payload };
+    case "set_rootLabel": return { ...state, rootLabel: action.payload, rootLabelTouched: action.payload !== "" };
     case "select_root_table": return {
       ...state,
       rootTableId: action.tableId,
-      rootLabel: action.label,
+      // The table's name is only a default: a label the user typed stays.
+      rootLabel: state.rootLabelTouched ? state.rootLabel : action.label,
       rootTenantIdColumn: "",
     };
     case "toggle_global_table": return {
@@ -382,6 +403,7 @@ const initialCreateFormState: CreateFormState = {
   rootTableId: "",
   rootTenantIdColumn: "",
   rootLabel: "",
+  rootLabelTouched: false,
   globalTableIds: [],
   scopedTableColumns: {},
 };
@@ -637,6 +659,7 @@ function TenancyCreateForm({
       body={draftBody}
       warnings={draftWarnings}
       busy={busy}
+      draftStatus={draftStatus}
       saveStatus={saveStatus}
       onFrontmatterChange={(fm) => dispatch({ type: "set_draftFrontmatter", payload: fm })}
       onBodyChange={(b) => dispatch({ type: "set_draftBody", payload: b })}
@@ -652,6 +675,7 @@ function TenancyReviewDraft({
   body,
   warnings = [],
   busy,
+  draftStatus = null,
   saveStatus,
   onFrontmatterChange,
   onBodyChange,
@@ -667,6 +691,8 @@ function TenancyReviewDraft({
   body: string;
   warnings?: string[];
   busy: Set<string>;
+  /** How the draft reached review (`AI draft ready for review.`); the create form passes it (#1051). */
+  draftStatus?: StatusMessage | null;
   saveStatus: StatusMessage | null;
   onFrontmatterChange: (fm: TenantPolicyFrontmatter) => void;
   onBodyChange: (body: string) => void;
@@ -734,6 +760,7 @@ function TenancyReviewDraft({
         </div>
       </div>
 
+      {draftStatus && !saveStatus && <StatusBanner status={draftStatus} />}
       {saveStatus && <StatusBanner status={saveStatus} />}
 
       <div className="main-body">
