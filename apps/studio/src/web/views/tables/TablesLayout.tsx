@@ -8,8 +8,9 @@ import {
   CollapsibleTrigger,
 } from "../../components/ui/collapsible";
 import { SubRail, SubRailProvider, useSubRail } from "../../components/common/SubRail";
+import { enrichmentLevel, type EnrichmentLevel } from "../../lib/enrichment";
 
-type EnrichLevel = "enriched" | "partial" | "none";
+type EnrichLevel = EnrichmentLevel;
 type TrackFilter = "tracked" | "untracked";
 
 const LEVEL_LABELS: Record<EnrichLevel, string> = {
@@ -46,10 +47,7 @@ function TablesLayoutInner() {
   const [trackFilter, setTrackFilter] = useState<TrackFilter | null>(null);
 
   const getLevel = useCallback((t: typeof tables[0]): EnrichLevel => {
-    const draft = drafts[t.physical.id] ?? t.draft;
-    const hasSome = draft.description || (draft.aliases && draft.aliases.length > 0);
-    const allCols = Object.values(draft.columns ?? {}).every((c) => c.description);
-    return hasSome && allCols ? "enriched" : hasSome ? "partial" : "none";
+    return enrichmentLevel(drafts[t.physical.id] ?? t.draft);
   }, [drafts]);
 
   const isTracked = useCallback((t: typeof tables[0]): boolean => {

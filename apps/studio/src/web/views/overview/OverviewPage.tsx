@@ -5,6 +5,7 @@ import { useWorkspace, type StatusMessage } from "../../contexts/workspace-conte
 import { useRag } from "../../contexts/rag-context";
 import { usePlayground } from "../../contexts/playground-context";
 import { InlineStatus } from "../../components/common/StatusBanner";
+import { enrichmentLevel } from "../../lib/enrichment";
 import { formatNumber } from "../../lib/format";
 import { resyncSchema } from "../../api";
 
@@ -45,18 +46,10 @@ export function OverviewPage() {
 
   if (!workspace) return null;
 
-  const enrichedCount = tables.filter((t) => {
-    const d = t.draft;
-    const hasSome = d.description || (d.aliases && d.aliases.length > 0);
-    const allCols = Object.values(d.columns ?? {}).every((c) => c.description);
-    return hasSome && allCols;
-  }).length;
-  const partialCount = tables.filter((t) => {
-    const d = t.draft;
-    const hasSome = d.description || (d.aliases && d.aliases.length > 0);
-    const allCols = Object.values(d.columns ?? {}).every((c) => c.description);
-    return hasSome && !allCols;
-  }).length;
+  const levels = new Map(tables.map((t) => [t.physical.id, enrichmentLevel(t.draft)]));
+  const enrichedCount = tables.filter((t) => levels.get(t.physical.id) === "enriched").length;
+  const partialCount = tables.filter((t) => levels.get(t.physical.id) === "partial").length;
+  const pendingTables = tables.filter((t) => levels.get(t.physical.id) !== "enriched");
 
   const tenancyConfigured = Boolean(workspace.tenantPolicy);
 
@@ -126,7 +119,7 @@ export function OverviewPage() {
             <div className="card">
               <div className="card-hd">
                 <h3><Sparkles size={14} /> Pending enrichment</h3>
-                <span className="card-meta">{tables.length - enrichedCount} tables to go</span>
+                <span className="card-meta">{pendingTables.length} tables to go</span>
               </div>
               <div className="card-bd tight">
                 <table className="tbl">
@@ -134,16 +127,10 @@ export function OverviewPage() {
                     <tr><th>Table</th><th>Cols</th><th>Status</th><th aria-label="Actions"></th></tr>
                   </thead>
                   <tbody>
-                    {tables
-                      .filter((t) => {
-                        const d = t.draft;
-                        const allCols = Object.values(d.columns ?? {}).every((c) => c.description);
-                        return !(d.description && allCols);
-                      })
+                    {pendingTables
                       .slice(0, 6)
                       .map((t) => {
-                        const hasSome = t.draft.description || (t.draft.aliases && t.draft.aliases.length > 0);
-                        const level = hasSome ? "partial" : "none";
+                        const level = levels.get(t.physical.id);
                         return (
                           <tr
                             key={t.physical.id}
@@ -264,7 +251,8 @@ export function OverviewPage() {
                     <span style={{ fontSize: 12.5 }}>Build RAG index for retrieval-augmented queries</span>
                   </div>
                 )}
-                {ragStatus?.stale && (
+                {/* The server reports a missing index as stale too; "rebuild" only makes sense once one exists (#1053). */}
+                {ragStatus?.hasIndex && ragStatus.stale && (
                   <div className="row-h">
                     <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--ink-400)", flexShrink: 0 }} />
                     <span style={{ fontSize: 12.5 }}>Rebuild index — tables changed since last build</span>

@@ -4,6 +4,7 @@ import { useWorkspace } from "../../contexts/workspace-context";
 import { useRag } from "../../contexts/rag-context";
 import { StatusBanner } from "../../components/common/StatusBanner";
 import { SubRailTrigger } from "../../components/common/SubRail";
+import { enrichmentLevel } from "../../lib/enrichment";
 
 export function TableDetail() {
   const { selectedTable, selectedDraft, dirty, saveStatus, saveSelectedTable, resetSelectedDraft, busy } = useWorkspace();
@@ -17,9 +18,7 @@ export function TableDetail() {
   }
 
   const t = selectedTable;
-  const hasSome = selectedDraft.description || (selectedDraft.aliases && selectedDraft.aliases.length > 0);
-  const allCols = Object.values(selectedDraft.columns ?? {}).every((c) => c.description);
-  const level = hasSome && allCols ? "enriched" : hasSome ? "partial" : "none";
+  const level = enrichmentLevel(selectedDraft);
 
   return (
     <main className="main-pane">
