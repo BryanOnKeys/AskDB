@@ -67,8 +67,11 @@ test.describe("wizard: config that can't load", () => {
     await page.goto(`${studio.url}/`);
     const alert = page.getByRole("alert");
     await expect(alert).toContainText("askdb.config.ts couldn't be loaded");
+    await expect(alert).toContainText("then restart Studio");
     await expect(alert).toContainText("replay: this config cannot load");
     await expect(page.getByRole("heading", { name: /Add your secrets to \.env/ })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "1 · Introspect your database" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Run introspection" })).toBeDisabled();
+    await expect(page.getByText("Fix the config first: introspection reads it.")).toBeVisible();
   });
 });

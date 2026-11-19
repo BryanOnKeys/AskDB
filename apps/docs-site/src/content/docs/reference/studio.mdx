@@ -27,7 +27,7 @@ A flag overrides the config for that run. Write each flag and its value as two w
 
 Studio prints `AskDB Studio is running at http://<host>:<port>` and doesn't open a browser. If the port is in use, it prints the error and exits with status `1`; pick another port.
 
-Studio reads `askdb.config.*` from the directory you start it in. If the file fails to load, Studio prints a warning with the error and starts without it. With no config there, or no schema artifact in the schema directory, it opens the [guided setup](#guided-setup).
+Studio reads `askdb.config.*` from the directory you start it in. If the file fails to load, Studio prints a warning with the error and starts without it. With no config there, or no schema artifact in the schema directory, it opens the [guided setup](#guided-setup). When the config fails to load and there's no schema artifact, the guided setup shows the load error and keeps introspection off until the config loads. Restart Studio after you fix it.
 
 ## Guided setup
 

@@ -29,7 +29,7 @@ Studio also works as the *first* command in a new project. Some directories have
 
 </Steps>
 
-With a config but no schema artifact, the wizard goes straight to step 3. If that config can't load, it shows the error to fix first.
+With a config but no schema artifact, the wizard skips the `.env` step and starts at introspection. If that config can't load, it shows the error to fix first, and you restart Studio once it's fixed.
 
 `npx askdb init` asks the same questions in the terminal and writes the same files. The [Studio reference](/reference/studio/#guided-setup) says what the wizard writes and installs, and how it picks a package manager.
 

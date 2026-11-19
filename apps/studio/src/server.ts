@@ -550,8 +550,8 @@ async function handleSetupIntrospect(state: StudioState): Promise<IntrospectRunR
   if (probe.loadError || !probe.outputDir) {
     throw new StudioHttpError(
       409,
-      `askdb.config.ts exists but could not be loaded: ${probe.loadError ?? "unknown error"}. ` +
-        "Install the project dependencies shown in setup step 1, then retry.",
+      `askdb.config.ts exists but could not be loaded: ${probe.loadError || "no error message"}. ` +
+        "Fix what the error names (often a missing package or .env variable), then retry; restart Studio if it persists.",
     );
   }
   const outDir = probe.outputDir;

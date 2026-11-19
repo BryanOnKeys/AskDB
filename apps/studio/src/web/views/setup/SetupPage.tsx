@@ -137,9 +137,12 @@ export function SetupPage({
     }
   }, [onComplete]);
 
-  // The .env step lists what a config the wizard just wrote reads. An existing config that loads
-  // has nothing left to fill in, so it goes straight to introspection (#1050).
+  // The .env step lists what a config the wizard just wrote reads. The wizard can't know what a
+  // config it didn't write reads, so an existing config goes straight to introspection (#1050).
   const introspectStep = configAlreadyExists ? 1 : 3;
+  // `null` means the config loaded; any string, even an empty one, is a load failure.
+  const loadFailed = status.configLoadError !== null;
+  const configFileName = status.configPath?.split(/[\\/]/).pop() ?? "askdb.config.ts";
 
   return (
     <div className="app-shell" style={{ display: "flex", alignItems: "flex-start", justifyContent: "center", overflow: "auto", padding: "48px 16px" }}>
@@ -195,22 +198,27 @@ export function SetupPage({
 
         {configResult && <SecretsCard stepNumber={2} envVars={configResult.envVars} />}
 
-        {configAlreadyExists && status.configLoadError && (
+        {configAlreadyExists && loadFailed && (
           <div className="card" style={{ borderColor: "var(--red-600)" }} role="alert">
             <div className="card-bd" style={{ display: "grid", gap: 6 }}>
               <p style={{ fontSize: 12.5, fontWeight: 600 }}>
-                <code className="mono">askdb.config.ts</code> couldn't be loaded
+                <code className="mono">{configFileName}</code> couldn't be loaded
               </p>
-              <p style={{ color: "var(--red-600)", fontSize: 12.5, whiteSpace: "pre-wrap" }}>{status.configLoadError}</p>
+              <p style={{ color: "var(--red-600)", fontSize: 12.5, whiteSpace: "pre-wrap" }}>{status.configLoadError || "No error message."}</p>
               <p className="muted" style={{ fontSize: 12.5, lineHeight: 1.6 }}>
-                Fix the config or the <code className="mono">.env</code> it reads, then reload this page.
+                Fix the config, the <code className="mono">.env</code> it reads or a missing package, then restart Studio.
               </p>
             </div>
           </div>
         )}
 
         {configDone && (
-          <IntrospectCard stepNumber={introspectStep} busy={busy} onIntrospect={() => void handleIntrospect()} />
+          <IntrospectCard
+            stepNumber={introspectStep}
+            busy={busy}
+            disabledReason={loadFailed ? "Fix the config first: introspection reads it." : undefined}
+            onIntrospect={() => void handleIntrospect()}
+          />
         )}
 
         {error && (
