@@ -10,7 +10,7 @@ import { resyncSchema } from "../../api";
 
 export function OverviewPage() {
   const navigate = useNavigate();
-  const { workspace, tables, load } = useWorkspace();
+  const { workspace, tables, refresh } = useWorkspace();
   const { ragStatus, refreshRagStatus } = useRag();
   const { historyEntries } = usePlayground();
   const [resyncing, setResyncing] = useState(false);
@@ -21,7 +21,7 @@ export function OverviewPage() {
     setResyncStatus({ kind: "loading", text: "Re-introspecting…" });
     try {
       const result = await resyncSchema();
-      await load();
+      await refresh();
       void refreshRagStatus();
       setResyncStatus({
         kind: "success",
@@ -32,7 +32,7 @@ export function OverviewPage() {
     } finally {
       setResyncing(false);
     }
-  }, [load, refreshRagStatus]);
+  }, [refresh, refreshRagStatus]);
 
   const clearResyncStatus = useEffectEvent(() => setResyncStatus(null));
 

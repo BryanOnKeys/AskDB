@@ -48,6 +48,11 @@ interface WorkspaceContextValue {
   suggestAllProgress: SuggestAllProgress | null;
 
   load: () => Promise<void>;
+  /**
+   * Re-read the workspace without the loading screen, so the page on screen stays mounted (and
+   * keeps its own state, such as a status message). Unsaved drafts survive. Throws on failure.
+   */
+  refresh: () => Promise<void>;
   saveSelectedTable: () => Promise<void>;
   resetSelectedDraft: () => void;
   updateTableDraft: (tableId: string, updater: (d: TableDraft) => TableDraft) => void;
@@ -89,6 +94,7 @@ type WorkspaceAction =
   | { type: "set_loadState"; payload: LoadState }
   | { type: "setup_required"; status: SetupStatusDto }
   | { type: "load_complete"; workspace: StudioWorkspaceDto }
+  | { type: "refresh_complete"; workspace: StudioWorkspaceDto }
   | { type: "set_workspace"; payload: StudioWorkspaceDto | null }
   | { type: "workspace_and_drafts"; workspace: StudioWorkspaceDto }
   | { type: "set_selectedTableId"; payload: string | null }
@@ -118,6 +124,11 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
         loadState: { kind: "ready" },
       };
     }
+    case "refresh_complete": return {
+      ...state,
+      workspace: action.workspace,
+      drafts: refreshDraftMap(state, action.workspace),
+    };
     case "set_workspace": return { ...state, workspace: action.payload };
     case "workspace_and_drafts": return {
       ...state,
@@ -242,6 +253,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const refresh = useCallback(async () => {
+    const nextWorkspace = await getWorkspace();
+    dispatch({ type: "refresh_complete", workspace: nextWorkspace });
+  }, []);
+
   const saveSelectedTable = useCallback(async () => {
     if (!selectedTable || !selectedDraft) return;
     setSaveStatus({ kind: "loading", text: "Saving changes..." });
@@ -358,12 +374,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     loadState, setupStatus, workspace, tables, filteredTables, selectedTable, selectedTableId, setSelectedTableId,
     drafts, selectedDraft, dirty, tableSearch, setTableSearch, saveStatus, setSaveStatus, busy,
     suggestions, suggestingKeys, suggestAllProgress,
-    load, saveSelectedTable, resetSelectedDraft, updateTableDraft, updateColumnDraft,
+    load, refresh, saveSelectedTable, resetSelectedDraft, updateTableDraft, updateColumnDraft,
     requestSuggestion, suggestAll, applySuggestion, dismissSuggestion, handleSaveConcepts, handleSaveTenantPolicy, handleSuggestTenantPolicy,
     withBusy,
   }), [
     applySuggestion, busy, dirty, dismissSuggestion, drafts, filteredTables, handleSaveConcepts,
-    handleSaveTenantPolicy, load, loadState, requestSuggestion, resetSelectedDraft,
+    handleSaveTenantPolicy, load, loadState, refresh, requestSuggestion, resetSelectedDraft,
     saveSelectedTable, saveStatus, selectedDraft, selectedTable, selectedTableId,
     setSaveStatus, setSelectedTableId, setTableSearch,
     setupStatus, suggestAll, suggestAllProgress, suggestingKeys, suggestions, tableSearch, tables, updateColumnDraft,
@@ -375,6 +391,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
 function makeDraftMap(workspace: StudioWorkspaceDto): Record<string, TableDraft> {
   return Object.fromEntries(workspace.tables.map((t) => [t.physical.id, clone(t.draft)]));
+}
+
+/**
+ * Drafts for a refreshed workspace: a table with unsaved edits keeps them; every other table takes
+ * the server's draft. Tables that no longer exist drop out.
+ */
+function refreshDraftMap(state: WorkspaceState, next: StudioWorkspaceDto): Record<string, TableDraft> {
+  const previous = new Map(state.workspace?.tables.map((t) => [t.physical.id, t.draft]) ?? []);
+  return Object.fromEntries(next.tables.map((t) => {
+    const id = t.physical.id;
+    const draft = state.drafts[id];
+    const edited = draft !== undefined && previous.has(id) && JSON.stringify(draft) !== JSON.stringify(previous.get(id));
+    return [id, edited ? draft : clone(t.draft)];
+  }));
 }
 
 function clone<T>(value: T): T {

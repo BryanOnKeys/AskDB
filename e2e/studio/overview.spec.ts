@@ -2,9 +2,11 @@
  * Replay of verify-askdb's `studio-overview` feature (.agents/skills/verify-askdb/features/studio-overview.md).
  *
  * Protects: the Overview's cards and pending list on a fresh shop schema, the row and button
- * shortcuts into Tables and Tenancy, `Resync schema`, and the saved Playground history on load.
- * Catches: a landing screen that miscounts, a shortcut that goes nowhere, or saved Playground
- * history that stays hidden until the next ask.
+ * shortcuts into Tables and Tenancy, `Resync schema` (its message, and unsaved edits kept), and
+ * the saved Playground history on load.
+ * Catches: a landing screen that miscounts, a shortcut that goes nowhere, a resync that swaps the
+ * page for the loading screen and loses its message or the user's unsaved edits, or saved
+ * Playground history that stays hidden until the next ask.
  * No production seam: it drives the built Studio by role and accessible name.
  */
 import { statSync, writeFileSync } from "node:fs";
@@ -51,21 +53,26 @@ test("overview-resync: re-reads the database into schema.json", async ({ page })
   expect(statSync(schemaJson).mtimeMs).toBeGreaterThan(before);
 });
 
-// Known bug: the success message is set on the Overview, then the workspace reload swaps the
-// whole page for App's loading screen, so the Overview remounts without it. The steps before the
-// last check must pass; only the last check pins the bug, and it fails once the bug is fixed:
-// then assert the message is visible instead, and drop the gotcha in studio-overview.md.
-test("overview-resync-status: known bug, Resync's message is lost on reload", async ({ page }) => {
+test("overview-resync: says what it re-read, and the page stays put", async ({ page }) => {
   await page.goto(`${studio.url}/overview`);
   const introspect = page.waitForResponse((r) => r.url().endsWith("/api/introspect") && r.request().method() === "POST");
   await page.getByRole("button", { name: "Resync schema" }).click();
   expect((await introspect).status()).toBe(200);
+  await expect(page.getByText("Re-introspected 3 tables from sqlite — enrichment preserved.")).toBeVisible();
   await expect(page.getByText("3 tables to go")).toBeVisible();
-  const shown = await page
-    .getByText("Re-introspected 3 tables from sqlite — enrichment preserved.")
-    .waitFor({ timeout: 3_000 })
-    .then(() => true, () => false);
-  expect(shown, "Resync's message now shows: the bug is fixed, so assert it instead and drop the gotcha").toBe(false);
+});
+
+test("overview-resync: an unsaved table edit survives a resync", async ({ page }) => {
+  await page.goto(`${studio.url}/tables/public/customers/enrichment`);
+  const tags = page.getByRole("textbox", { name: /^Tags/ });
+  await tags.fill("unsaved-tag");
+  await tags.blur(); // list fields commit on blur
+  await page.getByRole("link", { name: "Overview" }).click();
+  await page.getByRole("button", { name: "Resync schema" }).click();
+  await expect(page.getByText("Re-introspected 3 tables from sqlite — enrichment preserved.")).toBeVisible();
+  await page.getByRole("link", { name: /^Tables/ }).click();
+  await expect(page.getByRole("textbox", { name: /^Tags/ })).toHaveValue("unsaved-tag");
+  await expect(page.getByText("Unsaved changes", { exact: true })).toBeVisible();
 });
 
 test.describe("overview-history: a project with saved Playground history", () => {
