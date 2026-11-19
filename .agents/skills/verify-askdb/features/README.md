@@ -41,6 +41,41 @@ Keep implementation details out of the map: name only user paths, stable handles
 
 ## Features
 
+Each feature sits under the surface a user reaches it through. An arrow means the feature at its head needs what the arrow starts from before it can run.
+
+```mermaid
+flowchart LR
+  subgraph run["vctl setup (one run)"]
+    shop[("shop.db")]
+    fixtures[("schemas/ copies")]
+    model{{"fake model"}}
+  end
+  subgraph cli["askdb CLI"]
+    init["Initialize a project"]
+    introspect["Introspect a database"]
+    ask["Ask from the CLI"]
+    rag["Schema retrieval (RAG)"]
+  end
+  subgraph http["askdb-http"]
+    httpapi["HTTP API"]
+  end
+  subgraph studio["askdb studio"]
+    playground["Studio Playground"]
+  end
+  schema[("askdb/schema.json")]
+
+  shop --> introspect --> schema
+  schema --> ask
+  schema --> rag
+  schema --> playground
+  fixtures --> ask
+  fixtures --> httpapi
+  model --> ask
+  model --> httpapi
+  model --> playground
+  shop -- execute --> playground
+```
+
 - [Ask from the CLI](./ask-cli.md) covers `askdb ask`: generated SQL, the read-only refusal, the sensitive-column warning, `--explain` and `--mock-sql`.
 - [Introspect a database](./introspect.md) covers `askdb introspect` on SQLite: writing a schema folder, `--print` and `--diff`.
 - [HTTP API](./http-api.md) covers `askdb-http`: `/health`, `POST /ask`, its error shape and the execute refusal.
