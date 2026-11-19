@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-09-30, maintainer decision on #403). Amended 2026-10 (only peer ranges are held; see Amendments). Implemented in `.github/dependabot.yml`, the published packages' `ai` ranges, and the consumer lab's `host-peers` scenario (`examples/consumer-lab/test/host-peers.test.ts`).
+Accepted (2026-09-30, maintainer decision on #403). Amended 2026-10 (only peer ranges are held; see Amendments). Amended 2026-11 (#849: `@askdb/rag` drops its `@ai-sdk/openai` peer). Implemented in `.github/dependabot.yml`, the published packages' `ai` ranges, and the consumer lab's `host-peers` scenario (`examples/consumer-lab/test/host-peers.test.ts`).
 
 ## Context
 
