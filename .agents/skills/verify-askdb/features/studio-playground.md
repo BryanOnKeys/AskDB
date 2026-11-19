@@ -4,10 +4,10 @@ Studio's Playground (`/playground`) lets a user type a question, generate SQL ag
 
 ## Sub-features
 
-- `studio-open` serves the app with its session token, and the Playground shows the heading `Query Playground`.
-- `studio-generate` generates SQL for a question in `Full schema` mode and shows it under `Generated SQL`.
-- `studio-execute` runs the generated SQL read-only against `shop.db` and shows its rows.
-- `studio-guard` refuses an API call without the session token.
+- `studio-open` serves the app with its session token, and the Playground shows the heading `Query Playground`. Scripted: `e2e/studio/playground.spec.ts`.
+- `studio-generate` generates SQL for a question in `Full schema` mode and shows it under `Generated SQL`. Scripted: `e2e/studio/playground.spec.ts` and `e2e/studio/studio-api.test.ts`.
+- `studio-execute` runs the generated SQL read-only against `shop.db` and shows its rows. Scripted: `e2e/studio/playground.spec.ts` and `e2e/studio/studio-api.test.ts`.
+- `studio-guard` refuses an API call without the session token. Scripted: `e2e/studio/studio-api.test.ts`.
 
 ## How to get to it (user POV)
 

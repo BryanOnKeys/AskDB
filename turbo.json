@@ -26,6 +26,12 @@
       "passThroughEnv": ["ASKDB_TEST_SUMMARY_DIR"],
       "outputs": []
     },
+    "e2e": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "passThroughEnv": ["ASKDB_VERIFY_ROOT", "CI"],
+      "outputs": []
+    },
     "lint": {
       "dependsOn": ["^build", "^lint"],
       "outputs": []

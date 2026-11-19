@@ -16,7 +16,8 @@ export default defineConfig({
     include: ["**/*.test.ts", "**/*.test.tsx", "**/*.integration.test.ts"],
     // The consumer lab is not a workspace member: it has its own install and databases
     // (see examples/consumer-lab/README.md).
-    exclude: ["**/node_modules/**", "**/dist/**", "examples/consumer-lab/**"],
+    // e2e/ holds the verify-askdb replays: `pnpm e2e` runs them, after building what they drive.
+    exclude: ["**/node_modules/**", "**/dist/**", "examples/consumer-lab/**", "e2e/**"],
     testTimeout: 45_000,
     hookTimeout: 45_000,
   },

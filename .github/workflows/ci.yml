@@ -432,3 +432,59 @@ jobs:
           if-no-files-found: warn
           # .lab/ is a dot-directory, which upload-artifact skips by default.
           include-hidden-files: true
+
+  # ── 5. verify-askdb replays ──────────────────────────────────────────────
+  # The scripted journeys of verify-askdb's feature map (e2e/): the askdb CLI and HTTP API
+  # under Vitest, Studio under Playwright, each in a disposable project with a fake model.
+  # Docs-only PRs skip it, by the same filter as the consumer lab. Evidence and Playwright's
+  # report are uploaded, pass or fail.
+  e2e:
+    needs: [build, lab-changes]
+    if: needs.lab-changes.outputs.lab == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore Turbo cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
+      - name: Install Playwright's Chromium
+        run: pnpm -C e2e exec playwright install --with-deps chromium
+
+      # The runner context isn't available in a job-level env, so the evidence root is set here.
+      - name: Run the replays
+        env:
+          ASKDB_VERIFY_ROOT: ${{ runner.temp }}/askdb-verify
+        run: pnpm e2e
+
+      - name: Upload evidence and the Playwright report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-evidence
+          path: |
+            ${{ runner.temp }}/askdb-verify
+            e2e/playwright-report
+            e2e/test-results
+          if-no-files-found: warn

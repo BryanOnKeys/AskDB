@@ -4,9 +4,9 @@
 
 ## Sub-features
 
-- `init-write` writes the config and `.env.example` for the chosen database.
-- `init-next-steps` prints `Wrote:` with both paths and a `Next steps:` list.
-- `init-refuse-overwrite` refuses an existing config unless `--force` is passed.
+- `init-write` writes the config and `.env.example` for the chosen database. Scripted: `e2e/cli/init.test.ts`.
+- `init-next-steps` prints `Wrote:` with both paths and a `Next steps:` list. Scripted: `e2e/cli/init.test.ts`.
+- `init-refuse-overwrite` refuses an existing config unless `--force` is passed. Scripted: `e2e/cli/init.test.ts`.
 
 ## How to get to it (user POV)
 
