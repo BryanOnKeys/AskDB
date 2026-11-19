@@ -1,7 +1,7 @@
 import { useWorkspace } from "../../contexts/workspace-context";
 import { Badge } from "../../components/ui/badge";
 import { tableSensitivity, UNKNOWN_COLUMN_SENSITIVITY } from "../../lib/sensitivity";
-import { fieldName } from "../../components/ui/field";
+import { fieldName } from "../../lib/field-name";
 
 export function SensitivityTab() {
   const { selectedTable, selectedDraft, updateColumnDraft, updateTableDraft } = useWorkspace();

@@ -1,16 +1,7 @@
 import type { ReactNode } from "react"
 import { cn } from "@/web/lib/utils"
 
-/**
- * A repeated field's accessible name: its label, plus the thing it belongs to (a column, a root),
- * so `Description` for each column reads `Description for email` (#1048). `FieldLabelText` renders
- * the same name with the context visible to assistive tech only; use this one for `aria-label`s.
- */
-export function fieldName(label: string, context?: string): string {
-  return context ? `${label} for ${context}` : label
-}
-
-/** A field label's text: the label, then ` for <context>` for assistive tech only. */
+/** A field label's text: the label, then ` for <context>` for assistive tech only (see lib/field-name.ts). */
 export function FieldLabelText({ label, context }: { label: string; context?: string }) {
   return (
     <>
