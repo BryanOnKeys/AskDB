@@ -21,7 +21,8 @@ export function RagIndexPage() {
 
   if (!workspace) return null;
 
-  const queryDisabled = !ragStatus?.hasIndex || ragStatus.stale || busy.has("rag-query");
+  // With no chunk type checked there is nothing to search; the server refuses an empty list too.
+  const queryDisabled = !ragStatus?.hasIndex || ragStatus.stale || busy.has("rag-query") || ragTypes.length === 0;
 
   return (
     <main className="main-pane">

@@ -2107,10 +2107,15 @@ function parseRagQuery(body: unknown): { question: string; k: number; types?: Ch
   }
   let types: ChunkType[] | undefined;
   if (body.types !== undefined) {
-    // An unknown type is refused rather than dropped: dropping it could empty the list, and an
-    // empty list means "every type", the opposite of the filter the caller asked for (#1047).
+    // Leave `types` out to search every type. An unknown type is refused rather than dropped, and
+    // so is an empty list: either would otherwise widen the filter to every type, the opposite of
+    // what the caller asked for (#1047).
     const allowed = new Set<string>(STUDIO_CHUNK_TYPES);
-    if (!Array.isArray(body.types) || body.types.some((type) => typeof type !== "string" || !allowed.has(type))) {
+    if (
+      !Array.isArray(body.types) ||
+      body.types.length === 0 ||
+      body.types.some((type) => typeof type !== "string" || !allowed.has(type))
+    ) {
       throw new StudioHttpError(400, `\`types\` must be an array of chunk types: ${STUDIO_CHUNK_TYPES.join(", ")}.`);
     }
     types = body.types as ChunkType[];
@@ -2118,7 +2123,7 @@ function parseRagQuery(body: unknown): { question: string; k: number; types?: Ch
   return {
     question: body.question.trim(),
     k,
-    ...(types && types.length > 0 ? { types } : {}),
+    ...(types ? { types } : {}),
   };
 }
 

@@ -192,7 +192,7 @@ describe("AskDB Studio server", () => {
 
   // #1047: the server's type allowlist predated the tenant-policy chunk type, so a query filtered
   // to tenant-policy alone came back with every type.
-  it("filters a RAG query to tenant-policy chunks, and refuses an unknown chunk type", async () => {
+  it("filters a RAG query to tenant-policy chunks, and refuses an unknown, empty or non-array type list", async () => {
     installStudioRuntime();
     const server = createStudioServer({ schema: copyFixture("agency-multi-tenant.schema") });
     servers.push(server);
@@ -207,9 +207,12 @@ describe("AskDB Studio server", () => {
     expect(retrieved.results.length).toBeGreaterThan(0);
     expect(new Set(retrieved.results.map((result: { type: string }) => result.type))).toEqual(new Set(["tenant-policy"]));
 
-    const unknown = await postRaw(`${baseUrl}/api/rag/query`, { question: "Which agency?", types: ["tenant-policy", "nope"] });
-    expect(unknown.status).toBe(400);
-    await expect(unknown.json()).resolves.toMatchObject({ error: { message: expect.stringContaining("`types`") } });
+    // Each of these would otherwise widen the query to every type.
+    for (const types of [["tenant-policy", "nope"], [], "tenant-policy", null]) {
+      const refused = await postRaw(`${baseUrl}/api/rag/query`, { question: "Which agency?", types });
+      expect(refused.status, JSON.stringify(types)).toBe(400);
+      await expect(refused.json()).resolves.toMatchObject({ error: { message: expect.stringContaining("`types`") } });
+    }
   });
 
   // #375 review: roots whose labels derive the same placeholder are a load error. Studio
