@@ -443,8 +443,6 @@ jobs:
     if: needs.lab-changes.outputs.lab == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      ASKDB_VERIFY_ROOT: ${{ runner.temp }}/askdb-verify
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -474,7 +472,10 @@ jobs:
       - name: Install Playwright's Chromium
         run: pnpm -C e2e exec playwright install --with-deps chromium
 
+      # The runner context isn't available in a job-level env, so the evidence root is set here.
       - name: Run the replays
+        env:
+          ASKDB_VERIFY_ROOT: ${{ runner.temp }}/askdb-verify
         run: pnpm e2e
 
       - name: Upload evidence and the Playwright report
