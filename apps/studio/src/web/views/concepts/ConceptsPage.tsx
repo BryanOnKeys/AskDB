@@ -479,6 +479,8 @@ function LinksInput({
   const wrapperRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  // Set when focus moves to the search box only to keep it out of <body>, not to search.
+  const focusWithoutOpening = useRef(false);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -589,6 +591,10 @@ function LinksInput({
                 onClick={(e) => {
                   e.stopPropagation();
                   removeLink(id);
+                  // The button goes away with its chip; keep focus in the links box, not <body>,
+                  // without opening the list over the rest of the form.
+                  focusWithoutOpening.current = true;
+                  inputRef.current?.focus();
                 }}
                 title="Remove"
                 aria-label={`Remove link to ${labelFor(id)}`}
@@ -612,7 +618,10 @@ function LinksInput({
           value={query}
           // Typing reopens the list: after a pick the box keeps focus, so onFocus alone left it shut.
           onChange={(e) => { setQuery(e.target.value); setHighlightIndex(0); setOpen(true); }}
-          onFocus={() => setOpen(true)}
+          onFocus={() => {
+            if (focusWithoutOpening.current) focusWithoutOpening.current = false;
+            else setOpen(true);
+          }}
           onKeyDown={handleKeyDown}
         />
       </div>

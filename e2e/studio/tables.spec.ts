@@ -102,6 +102,13 @@ test("tables-suggest-one: one field's Suggest drafts candidates for that field o
   await expect(drafts).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Description for name", exact: true })).toHaveValue("Full name as entered at checkout.");
   await expect(page.getByRole("textbox", { name: "Description", exact: true })).toHaveValue("");
+
+  // Every other field has a name of its own too.
+  for (const name of ["Aliases", "Business vocabulary", "Aliases for name"]) {
+    await expect(page.getByRole("textbox", { name, exact: true })).toHaveCount(1);
+  }
+  await expect(page.getByRole("textbox", { name: /^Enum notes for name\b/ })).toHaveCount(1);
+  await expect(page.getByRole("combobox", { name: "Sensitivity override for name", exact: true })).toHaveCount(1);
 });
 
 test("tables-revert: Revert discards an unsaved edit", async ({ page }) => {

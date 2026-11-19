@@ -1,6 +1,7 @@
 import { useWorkspace } from "../../contexts/workspace-context";
 import { Badge } from "../../components/ui/badge";
 import { tableSensitivity, UNKNOWN_COLUMN_SENSITIVITY } from "../../lib/sensitivity";
+import { fieldName } from "../../components/ui/field";
 
 export function SensitivityTab() {
   const { selectedTable, selectedDraft, updateColumnDraft, updateTableDraft } = useWorkspace();
@@ -86,8 +87,10 @@ export function SensitivityTab() {
                     <td><span className="mono">{col.name}</span></td>
                     <td>{col.sensitive ? <Badge variant="danger">sensitive</Badge> : <span className="muted">—</span>}</td>
                     <td>
+                      {/* A table cell has no label of its own, so the name goes on the select itself;
+                          the Enrichment tab's fields name theirs through FieldLabelText instead. */}
                       <select
-                        aria-label={`Sensitivity override for ${col.name}`}
+                        aria-label={fieldName("Sensitivity override", col.name)}
                         style={{ fontSize: 12, padding: "2px 6px", borderRadius: 4, border: "1px solid var(--border)" }}
                         value={colDraft.sensitive === undefined ? "inherit" : colDraft.sensitive ? "true" : "false"}
                         onChange={(e) => {

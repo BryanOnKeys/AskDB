@@ -3,7 +3,7 @@ import { Loader2, Sparkles, ChevronRight } from "lucide-react";
 import type { SuggestSource } from "@askdb/enrich";
 import { useWorkspace } from "../../contexts/workspace-context";
 import { Badge } from "../../components/ui/badge";
-import { Field } from "../../components/ui/field";
+import { Field, FieldLabelText, fieldName } from "../../components/ui/field";
 import { Input } from "../../components/ui/input";
 import { ListInput } from "../../components/ui/list-input";
 import { Textarea } from "../../components/ui/textarea";
@@ -271,7 +271,7 @@ function FieldWithSuggest({
   source: SuggestSource;
 }) {
   const id = useId();
-  const name = context ? `${label} for ${context}` : label;
+  const name = fieldName(label, context);
   const { suggestions, suggestingKeys, requestSuggestion, applySuggestion, dismissSuggestion } = useWorkspace();
   const key = suggestionKey(source);
   const suggesting = suggestingKeys.has(key);
@@ -283,8 +283,7 @@ function FieldWithSuggest({
     <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <label htmlFor={id} className="muted" style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-          {label}
-          {context && <span className="sr-only"> for {context}</span>}
+          <FieldLabelText label={label} context={context} />
         </label>
         <button
           type="button"
@@ -418,8 +417,7 @@ function SensitiveSelect({
   return (
     <label style={{ display: "grid", gap: 6 }}>
       <span className="muted" style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-        {label}
-        {context && <span className="sr-only"> for {context}</span>}
+        <FieldLabelText label={label} context={context} />
       </span>
       <select
         className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"

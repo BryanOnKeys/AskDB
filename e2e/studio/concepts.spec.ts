@@ -32,6 +32,7 @@ test("concepts-empty, concepts-add, concepts-save: a linked concept lands in con
   await page.getByRole("button", { name: "Remove link to public.orders" }).focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("button", { name: "Remove link to public.orders" })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Search tables or columns" })).toBeFocused();
   await expect(page.getByRole("button", { name: "Remove link to public.customers" })).toBeVisible();
   await page.getByRole("textbox", { name: /^Description/ }).fill("Total quantity a customer has ordered across all orders.");
   // Two buttons share the name while the form is open: the header's and the form's submit.
