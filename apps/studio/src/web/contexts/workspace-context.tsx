@@ -22,6 +22,8 @@ async function handleSuggestTenantPolicy() {
 
 type LoadState = { kind: "loading" | "ready" | "error" | "setup"; message?: string };
 export type StatusMessage = { kind: "neutral" | "loading" | "success" | "error"; text: string };
+/** How long a success or neutral status stays on screen before it clears itself. */
+export const STATUS_CLEAR_MS = 4000;
 /** Drafts the model returned for one field, shown inline under it until Use or Dismiss (#952). */
 export type FieldSuggestion = { source: SuggestSource; candidates: Array<{ text: string }> };
 export type SuggestAllProgress = { tableId: string; done: number; total: number };
@@ -220,7 +222,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (saveStatus?.kind === "success" || saveStatus?.kind === "neutral") {
-      const id = setTimeout(() => clearSaveStatus(), 4000);
+      const id = setTimeout(() => clearSaveStatus(), STATUS_CLEAR_MS);
       return () => clearTimeout(id);
     }
   }, [saveStatus]);
@@ -360,7 +362,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       try {
         const nextWorkspace = await saveTenantPolicy({ frontmatter, body });
         dispatch({ type: "set_workspace", payload: nextWorkspace });
-        setSaveStatus({ kind: "success", text: "Tenant policy saved." });
+        // The save swaps the form for the summary, so TenancyPage owns the success message (#1051).
+        setSaveStatus(null);
         saved = true;
       } catch (error) {
         setSaveStatus({ kind: "error", text: getErrorMessage(error) });

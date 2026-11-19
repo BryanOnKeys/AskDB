@@ -19,7 +19,7 @@ import { Field } from "../../components/ui/field";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { StatusBanner } from "../../components/common/StatusBanner";
-import type { StatusMessage } from "../../contexts/workspace-context";
+import { STATUS_CLEAR_MS, type StatusMessage } from "../../contexts/workspace-context";
 import type { StudioTableDto, SuggestTenantPolicyResponse } from "@/shared/api";
 import { columnOptions, manualTenantPolicyFrontmatter, type ManualTenantPolicyForm } from "../../lib/manual-tenant-policy";
 
@@ -30,6 +30,7 @@ export function TenancyPage() {
     handleSaveTenantPolicy,
     handleSuggestTenantPolicy,
     saveStatus,
+    setSaveStatus,
     busy,
   } = useWorkspace();
   const { refreshRagStatus } = useRag();
@@ -50,7 +51,7 @@ export function TenancyPage() {
   const clearSavedStatus = useEffectEvent(() => setSavedStatus(null));
   useEffect(() => {
     if (!savedStatus) return;
-    const id = setTimeout(() => clearSavedStatus(), 4000);
+    const id = setTimeout(() => clearSavedStatus(), STATUS_CLEAR_MS);
     return () => clearTimeout(id);
   }, [savedStatus]);
 
@@ -69,6 +70,7 @@ export function TenancyPage() {
           onSave={onSaveTenantPolicy}
           onSuggest={handleSuggestTenantPolicy}
           saveStatus={saveStatus}
+          onEnterReview={() => setSaveStatus(null)}
         />
       </main>
     );
@@ -350,14 +352,20 @@ type CreateFormAction =
 
 function createFormReducer(state: CreateFormState, action: CreateFormAction): CreateFormState {
   switch (action.type) {
-    // A status belongs to the screen it was set on: "AI draft ready" shouldn't follow Start Over back.
-    case "set_mode": return { ...state, mode: action.payload, draftStatus: null };
+    // A status belongs to the screen it was set on: "AI draft ready" shouldn't follow Start Over
+    // back. A draft still loading keeps its status, so its spinner and disabled button stay.
+    case "set_mode": return {
+      ...state,
+      mode: action.payload,
+      draftStatus: state.draftStatus?.kind === "loading" ? state.draftStatus : null,
+    };
     case "set_draftStatus": return { ...state, draftStatus: action.payload };
     case "set_draftFrontmatter": return { ...state, draftFrontmatter: action.payload };
     case "set_draftBody": return { ...state, draftBody: action.payload };
     case "set_enforcement": return { ...state, enforcement: action.payload };
     case "set_rootTenantIdColumn": return { ...state, rootTenantIdColumn: action.payload };
-    case "set_rootLabel": return { ...state, rootLabel: action.payload, rootLabelTouched: action.payload !== "" };
+    // Blank counts as untyped, as it does when the policy is built (manual-tenant-policy.ts).
+    case "set_rootLabel": return { ...state, rootLabel: action.payload, rootLabelTouched: action.payload.trim() !== "" };
     case "select_root_table": return {
       ...state,
       rootTableId: action.tableId,
@@ -416,6 +424,7 @@ function TenancyCreateForm({
   onSave,
   onSuggest,
   saveStatus,
+  onEnterReview,
 }: {
   tables: StudioTableDto[];
   schemaId: string;
@@ -424,6 +433,8 @@ function TenancyCreateForm({
   onSave: (frontmatter: TenantPolicyFrontmatter, body?: string) => Promise<boolean>;
   onSuggest: () => Promise<SuggestTenantPolicyResponse>;
   saveStatus: StatusMessage | null;
+  /** Clears a status left from another screen, so the review screen's own message shows. */
+  onEnterReview: () => void;
 }) {
   const [state, dispatch] = useReducer(createFormReducer, initialCreateFormState);
   const { mode, draftStatus, draftFrontmatter, draftBody, draftWarnings, enforcement, rootTableId, rootTenantIdColumn, rootLabel, globalTableIds, scopedTableColumns } = state;
@@ -438,6 +449,7 @@ function TenancyCreateForm({
     try {
       const result = await onSuggest();
       dispatch({ type: "ai_draft_complete", frontmatter: result.frontmatter, body: result.body, warnings: result.warnings });
+      onEnterReview();
     } catch (error) {
       dispatch({ type: "set_draftStatus", payload: { kind: "error", text: error instanceof Error ? error.message : String(error) } });
     }
@@ -446,6 +458,7 @@ function TenancyCreateForm({
   function handleManualToReview() {
     if (!manualFrontmatter) return;
     dispatch({ type: "manual_to_review", frontmatter: manualFrontmatter, body: "# Tenant Policy\n\n\n\n## Hierarchy\n\n\n\n## Scope Rules\n\n\n\n## Sensitive Interactions\n\n" });
+    onEnterReview();
   }
 
   function handleConfirm() {

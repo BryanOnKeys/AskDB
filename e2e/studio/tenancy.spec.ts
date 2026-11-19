@@ -99,6 +99,11 @@ test.describe("tenancy-ai-draft", () => {
     await page.getByRole("button", { name: /^Draft with AI/ }).click();
     await expect(page.getByRole("heading", { name: "Review Tenant Policy" })).toBeVisible();
     await expect(page.getByText("AI draft ready for review.")).toBeVisible();
+    // The message belongs to the review screen: Start Over doesn't carry it back.
+    await page.getByRole("button", { name: "Start Over" }).click();
+    await expect(page.getByText("AI draft ready for review.")).toHaveCount(0);
+    await page.getByRole("button", { name: /^Draft with AI/ }).click();
+    await expect(page.getByText("AI draft ready for review.")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Scoped Tables (1)" })).toBeVisible();
     await page.getByRole("button", { name: "Confirm & Save" }).click();
 
@@ -127,5 +132,10 @@ test.describe("tenancy-edit", () => {
     await expect(page.getByText("Tenant policy saved.")).toBeVisible();
     const file = readFileSync(join(studio.run.project, "schemas/agency-multi-tenant.schema/tenant-policy.md"), "utf8");
     expect(file).toContain("enforcement: warn");
+
+    // Editing again starts clean: the last save's message doesn't follow onto the edit screen.
+    await page.getByRole("button", { name: "Edit" }).click();
+    await expect(page.getByRole("heading", { name: "Edit Tenant Policy" })).toBeVisible();
+    await expect(page.getByText("Tenant policy saved.")).toHaveCount(0);
   });
 });
