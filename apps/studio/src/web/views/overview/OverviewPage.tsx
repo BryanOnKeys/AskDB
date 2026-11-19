@@ -251,7 +251,7 @@ export function OverviewPage() {
                     <span style={{ fontSize: 12.5 }}>Build RAG index for retrieval-augmented queries</span>
                   </div>
                 )}
-                {/* The server reports a missing index as stale too; "rebuild" only makes sense once one exists (#1053). */}
+                {/* `stale` is true with no index too (see StudioRagStatusDto). */}
                 {ragStatus?.hasIndex && ragStatus.stale && (
                   <div className="row-h">
                     <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--ink-400)", flexShrink: 0 }} />

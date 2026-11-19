@@ -160,5 +160,11 @@ test.describe("overview-cards: a table with aliases and every column described, 
     const pending = page.getByRole("table").filter({ has: page.getByRole("columnheader", { name: "Cols" }) });
     await expect(pending.getByRole("row").filter({ has: page.getByRole("cell") })).toHaveCount(3);
     await expect(pending.getByRole("row", { name: /public\.customers/ })).toContainText("partial");
+
+    // The Tables list's filters count it the same way.
+    await page.getByRole("link", { name: /^Tables/ }).click();
+    await expect(page.getByRole("button", { name: "Complete 0" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Partial 1" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Not started 2" })).toBeVisible();
   });
 });

@@ -8,12 +8,11 @@ import {
   CollapsibleTrigger,
 } from "../../components/ui/collapsible";
 import { SubRail, SubRailProvider, useSubRail } from "../../components/common/SubRail";
-import { enrichmentLevel, type EnrichmentLevel } from "../../lib/enrichment";
+import { ENRICHMENT_LEVELS, enrichmentLevel, type EnrichmentLevel } from "../../lib/enrichment";
 
-type EnrichLevel = EnrichmentLevel;
 type TrackFilter = "tracked" | "untracked";
 
-const LEVEL_LABELS: Record<EnrichLevel, string> = {
+const LEVEL_LABELS: Record<EnrichmentLevel, string> = {
   enriched: "Complete",
   partial: "Partial",
   none: "Not started",
@@ -42,11 +41,11 @@ function TablesLayoutInner() {
   } = useWorkspace();
 
   // Enrichment filter state — null means "show all"
-  const [enrichFilter, setEnrichFilter] = useState<Set<EnrichLevel> | null>(null);
+  const [enrichFilter, setEnrichFilter] = useState<Set<EnrichmentLevel> | null>(null);
   // Track filter — null means "show all"
   const [trackFilter, setTrackFilter] = useState<TrackFilter | null>(null);
 
-  const getLevel = useCallback((t: typeof tables[0]): EnrichLevel => {
+  const getLevel = useCallback((t: typeof tables[0]): EnrichmentLevel => {
     return enrichmentLevel(drafts[t.physical.id] ?? t.draft);
   }, [drafts]);
 
@@ -57,7 +56,7 @@ function TablesLayoutInner() {
 
   // Count by enrichment level (across all tables, not just filtered)
   const levelCounts = useMemo(() => {
-    const counts: Record<EnrichLevel, number> = { enriched: 0, partial: 0, none: 0 };
+    const counts: Record<EnrichmentLevel, number> = { enriched: 0, partial: 0, none: 0 };
     for (const t of tables) counts[getLevel(t)]++;
     return counts;
   }, [tables, getLevel]);
@@ -113,7 +112,7 @@ function TablesLayoutInner() {
     }
   }, [params.schema, params.name, tables, navigate, setSelectedTableId]);
 
-  function toggleFilter(level: EnrichLevel) {
+  function toggleFilter(level: EnrichmentLevel) {
     setEnrichFilter((prev) => {
       if (!prev) {
         // Nothing active → activate only this level
@@ -164,7 +163,7 @@ function TablesLayoutInner() {
           />
         </div>
         <div className="enrich-filter-bar">
-          {(["enriched", "partial", "none"] as EnrichLevel[]).map((level) => {
+          {ENRICHMENT_LEVELS.map((level) => {
             const active = !enrichFilter || enrichFilter.has(level);
             return (
               <button
