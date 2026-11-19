@@ -2,12 +2,12 @@
  * Replay of verify-askdb's `studio-overview` feature (.agents/skills/verify-askdb/features/studio-overview.md).
  *
  * Protects: the Overview's cards and pending list on a fresh shop schema, the row and button
- * shortcuts into Tables and Tenancy, `Resync schema` (its message, and unsaved edits kept), and
- * the saved Playground history on load.
+ * shortcuts into Tables and Tenancy (the row's Enrich link from the keyboard), `Resync schema`
+ * (its message, and unsaved edits kept), and the saved Playground history on load.
  * Catches: a landing screen that miscounts (or counts one way and lists another), a suggestion
- * that doesn't fit the state, a shortcut that goes nowhere, a resync that swaps the page for the
- * loading screen and loses its message or the user's unsaved edits, or saved Playground history
- * that stays hidden until the next ask.
+ * that doesn't fit the state, a shortcut that goes nowhere or needs a mouse, a resync that swaps
+ * the page for the loading screen and loses its message or the user's unsaved edits, or saved
+ * Playground history that stays hidden until the next ask.
  * No production seam: it drives the built Studio by role and accessible name.
  */
 import { mkdirSync, statSync, writeFileSync } from "node:fs";
@@ -30,6 +30,12 @@ test("overview-cards and overview-pending: counts, then a row opens its table", 
   await expect(pending.getByRole("row").filter({ has: page.getByRole("cell") })).toHaveCount(3);
   await pending.getByRole("row", { name: /public\.customers/ }).click();
   await expect(page).toHaveURL(/\/tables\/public\/customers\/enrichment$/);
+
+  // The keyboard way in: each row's Enrich is a link named for its table.
+  await page.goto(`${studio.url}/overview`);
+  await page.getByRole("link", { name: "Enrich public.orders" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/tables\/public\/orders\/enrichment$/);
 });
 
 test("overview-shortcuts: Enrich tables and Draft tenant policy", async ({ page }) => {

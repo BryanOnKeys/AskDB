@@ -779,11 +779,11 @@ function TenancyReviewDraft({
                         </div>
                       </div>
                       {frontmatter.roots.length > 1 && (
-                        <button type="button" className="btn ghost sm" onClick={() => removeRoot(i)} title="Remove root">×</button>
+                        <button type="button" className="btn ghost sm" onClick={() => removeRoot(i)} title="Remove root" aria-label={`Remove root ${root.id}`}><span aria-hidden="true">×</span></button>
                       )}
                     </div>
                     <div style={{ marginTop: 8 }}>
-                      <Field label="Label" description="Human-readable name for this tenant root.">
+                      <Field label="Label" context={root.id} description="Human-readable name for this tenant root.">
                         <Input value={root.label} onChange={(e) => updateRootLabel(i, e.target.value)} />
                       </Field>
                     </div>
@@ -806,7 +806,7 @@ function TenancyReviewDraft({
                         <code>{edge.child}</code>
                         <div className="muted tiny" style={{ marginTop: 4 }}>FK: {edge.foreignKey}</div>
                       </div>
-                      <button type="button" className="btn ghost sm" onClick={() => removeHierarchyEdge(i)} title="Remove">×</button>
+                      <button type="button" className="btn ghost sm" onClick={() => removeHierarchyEdge(i)} title="Remove" aria-label={`Remove hierarchy edge ${edge.parent} to ${edge.child}`}><span aria-hidden="true">×</span></button>
                     </div>
                   ))}
                 </div>
@@ -834,7 +834,7 @@ function TenancyReviewDraft({
                           ))}
                         </div>
                       </div>
-                      <button type="button" className="btn ghost sm" onClick={() => removeScopedTable(i)} title="Remove">×</button>
+                      <button type="button" className="btn ghost sm" onClick={() => removeScopedTable(i)} title="Remove" aria-label={`Remove scoped table ${scoped.id}`}><span aria-hidden="true">×</span></button>
                     </div>
                   ))}
                 </div>
@@ -860,7 +860,7 @@ function TenancyReviewDraft({
                           ))}
                         </div>
                       </div>
-                      <button type="button" className="btn ghost sm" onClick={() => removePolymorphicTable(i)} title="Remove">×</button>
+                      <button type="button" className="btn ghost sm" onClick={() => removePolymorphicTable(i)} title="Remove" aria-label={`Remove polymorphic table ${poly.id}`}><span aria-hidden="true">×</span></button>
                     </div>
                   ))}
                 </div>
@@ -894,7 +894,7 @@ function TenancyReviewDraft({
               <p className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
                 Optional markdown body explaining the tenant policy.
               </p>
-              <Textarea className="min-h-48 font-mono text-xs" value={body} onChange={(e) => onBodyChange(e.target.value)} />
+              <Textarea aria-label="Policy body" className="min-h-48 font-mono text-xs" value={body} onChange={(e) => onBodyChange(e.target.value)} />
             </div>
           </section>
 
