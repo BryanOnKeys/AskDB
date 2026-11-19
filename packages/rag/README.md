@@ -10,11 +10,9 @@ Deterministic retrieval over AskDB schema artifacts. `@askdb/rag` chunks the des
 pnpm add @askdb/rag @askdb/core ai
 # only if you use the pgvector adapter:
 pnpm add pg
-# only if you build OpenAI embedding models with the AI SDK yourself:
-pnpm add @ai-sdk/openai
 ```
 
-`ai` is a required peer dependency of `@askdb/core`. For `@askdb/rag` itself, `pg`, `ai`, and `@ai-sdk/openai` are optional peer dependencies — the chunker, in-memory store, and file store do not require them.
+`ai` is a required peer dependency of `@askdb/core`. For `@askdb/rag` itself, `pg` and `ai` are optional peer dependencies — the chunker, in-memory store, and file store do not require them.
 
 ## Quickstart
 
