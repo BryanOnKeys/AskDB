@@ -195,8 +195,18 @@ function describeError(error: unknown): string {
 
 const CONTROL_CHAR = /[\u0000-\u001f\u007f]/;
 const INLINABLE = /^[\x20-\x5b\x5d-\x7e]*$/;
-const RUNS = Number(process.env.ASKDB_VERIFY_RUNS ?? 300);
-const SEED = process.env.ASKDB_VERIFY_SEED === undefined ? undefined : Number(process.env.ASKDB_VERIFY_SEED);
+/** An integer from the environment, or the fallback. A value that isn't one throws: a blank or `20k` would run zero cases and pass. */
+function envInteger(name: string, fallback: number | undefined, { positive }: { positive: boolean }): number | undefined {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
+  const value = Number(raw);
+  if (raw.trim() === "" || !Number.isInteger(value) || (positive && value < 1)) {
+    throw new Error(`${name} must be ${positive ? "a positive integer" : "an integer"}, got ${JSON.stringify(raw)}`);
+  }
+  return value;
+}
+const RUNS = envInteger("ASKDB_VERIFY_RUNS", 300, { positive: true })!;
+const SEED = envInteger("ASKDB_VERIFY_SEED", undefined, { positive: false });
 
 describe("bindPreparedQuery() forms agree on a live SQLite", () => {
   it("every form returns the rows the template means, with each value in its own slot", () => {
