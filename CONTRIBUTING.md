@@ -16,6 +16,8 @@ If `pnpm build` fails with **Cannot find module `.../node_modules/turbo/bin/turb
 
 Use Node 22.23.4 or newer and pnpm 11. The published libraries support Node `>=22.23.4`; CI builds and runs the unit suites on Node 22 (floor), 24 (Maintenance LTS) and 26 (Active LTS). Optional Postgres fixtures live under `fixtures/` for integration checks.
 
+`pnpm e2e` runs the scripted replays in `e2e/` (the `askdb` CLI, the HTTP API and Studio, each in a disposable project with a fake model; ADR 0052); run `pnpm -C e2e exec playwright install chromium` once first. The `verify-askdb` skill (`.agents/skills/verify-askdb/`) is the agent-driven side of the same checks.
+
 `pnpm test` runs each package's `test` task through Turbo, which first builds that package and its workspace dependencies (`test` depends on `build` and `^build`). Tests that spawn `apps/cli/dist/cli.js` rely on that; if you run `vitest` directly inside a package, run `pnpm build` first.
 
 ## Integration Tests

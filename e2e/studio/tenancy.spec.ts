@@ -22,6 +22,14 @@ const POLICY = [
 test.describe("tenancy-manual", () => {
   const studio = studioRun();
 
+  test("tenancy-choose: a schema with no policy offers the AI draft and the manual form", async ({ page }) => {
+    await page.goto(`${studio.url}/tenancy`);
+    await expect(page.getByRole("heading", { name: "Enable Multi-Tenancy" })).toBeVisible();
+    await expect(page.getByText("Configure tenant isolation for your schema")).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Draft with AI/ })).toBeEnabled();
+    await expect(page.getByRole("button", { name: /^Configure manually/ })).toBeEnabled();
+  });
+
   test("tenancy-manual and tenancy-save: a policy configured by hand", async ({ page }) => {
     await page.goto(`${studio.url}/tenancy`);
     await expect(page.getByRole("heading", { name: "Enable Multi-Tenancy" })).toBeVisible();

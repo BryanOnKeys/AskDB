@@ -50,12 +50,19 @@ test("overview-resync: re-reads the database into schema.json", async ({ page })
   expect(statSync(schemaJson).mtimeMs).toBeGreaterThan(before);
 });
 
-// Known failure: the success message is set on the Overview, then the workspace reload swaps the
-// whole page for App's loading screen, so the Overview remounts without it. When this starts
-// passing, drop test.fail and the gotcha in studio-overview.md.
-test("overview-resync-status: says what it re-read", async ({ page }) => {
-  test.fail(true, "Resync's status message is lost when the workspace reloads");
+// Known bug: the success message is set on the Overview, then the workspace reload swaps the
+// whole page for App's loading screen, so the Overview remounts without it. The steps before the
+// last check must pass; only the last check pins the bug, and it fails once the bug is fixed:
+// then assert the message is visible instead, and drop the gotcha in studio-overview.md.
+test("overview-resync-status: known bug, Resync's message is lost on reload", async ({ page }) => {
   await page.goto(`${studio.url}/overview`);
+  const introspect = page.waitForResponse((r) => r.url().endsWith("/api/introspect") && r.request().method() === "POST");
   await page.getByRole("button", { name: "Resync schema" }).click();
-  await expect(page.getByText("Re-introspected 3 tables from sqlite — enrichment preserved.")).toBeVisible({ timeout: 3_000 });
+  expect((await introspect).status()).toBe(200);
+  await expect(page.getByText("3 tables to go")).toBeVisible();
+  const shown = await page
+    .getByText("Re-introspected 3 tables from sqlite — enrichment preserved.")
+    .waitFor({ timeout: 3_000 })
+    .then(() => true, () => false);
+  expect(shown, "Resync's message now shows: the bug is fixed, so assert it instead and drop the gotcha").toBe(false);
 });

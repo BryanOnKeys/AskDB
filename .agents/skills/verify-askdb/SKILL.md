@@ -91,7 +91,7 @@ A replay asserts the steps of one feature file, one test per sub-feature, named 
 
 ## Evidence
 
-Each `cli`, `model requests`, `api-request` and `studio-request`, from `vctl` or from a replay, writes one numbered file to the run's evidence folder: `<os tmpdir>/askdb-verify/<run>/evidence/NN-<label>.json`. Set `ASKDB_VERIFY_ROOT` to move the root; CI sets it and uploads the folder with Playwright's report as the `e2e-evidence` artifact. A CLI record holds the command, cwd, exit code, stdout and stderr. An HTTP record holds the request, status and response. Save browser screenshots and accessibility snapshots into the same folder.
+Each `cli`, `model requests`, `api-request` and `studio-request`, from `vctl` or from a replay, writes one numbered file to the run's evidence folder: `<os tmpdir>/askdb-verify/<run>/evidence/NN-<label>.json`, or `NN-<label>.jsonl` for `model requests`, one request per line. Set `ASKDB_VERIFY_ROOT` to move the root; CI sets it and uploads the folder with Playwright's report as the `e2e-evidence` artifact. A CLI record holds the command, cwd, exit code, stdout and stderr. An HTTP record holds the request, status and response. A model-requests record holds each request's time, path and body. Save browser screenshots and accessibility snapshots into the same folder.
 
 Proof standards:
 
@@ -118,4 +118,4 @@ Stops only the processes this run started: each is matched by PID and command li
 
 Verification scaffolding: `setup` symlinks `@askdb/config` and `better-sqlite3` from `e2e/node_modules` into the project's `node_modules`, standing in for what an installed project resolves. `cleanup` deletes it with the project.
 
-Keep the map and the replays current with `maintain-verification-skill`, when it's installed.
+Keep the map and the replays current as you change AskDB: the feature entry contract in [`features/README.md`](features/README.md) and *Write a replay* above say how. A full pass over every feature, from source and live, is the maintainer's `maintain-verification-skill` (from the `Ygilany/skills` repository), when it's installed.

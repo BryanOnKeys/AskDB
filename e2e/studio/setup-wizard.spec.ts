@@ -8,15 +8,12 @@
  */
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { AskdbRun } from "../run.js";
 import { expect, studioRun, test } from "./fixtures.js";
 
 test.describe("wizard: no config", () => {
-  const studio = studioRun(async () => {
-    const run = await AskdbRun.create();
+  const studio = studioRun(async (run) => {
     rmSync(join(run.project, "askdb.config.ts"));
     await run.start("studio", null);
-    return run;
   });
 
   test("wizard-config, wizard-env, wizard-introspect: config written, then the app opens", async ({ page }) => {
@@ -42,10 +39,8 @@ test.describe("wizard: no config", () => {
 });
 
 test.describe("wizard: config, no schema", () => {
-  const studio = studioRun(async () => {
-    const run = await AskdbRun.create();
+  const studio = studioRun(async (run) => {
     await run.start("studio", null);
-    return run;
   });
 
   test("wizard-introspect: introspects from the browser and opens the Overview", async ({ page }) => {

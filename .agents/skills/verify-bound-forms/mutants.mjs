@@ -3,9 +3,11 @@
 // rebuild, run the check, and put the file back exactly as it was (uncommitted edits survive).
 //   node .agents/skills/verify-bound-forms/mutants.mjs      # every break
 //   node .agents/skills/verify-bound-forms/mutants.mjs 3    # one break, by number
-// Prints `caught`, `MISSED` or `NO LONGER APPLIES` per break; exits 1 unless every break is caught.
+// Runs the check unbroken first (exit 2 if it fails). Prints `caught`, `MISSED`, `ERRORED` or
+// `NO LONGER APPLIES` per break; exits 1 unless every break is caught. An interrupted run is undone
+// by its signal handler, or by the next run's first step.
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -51,17 +53,53 @@ const BREAKS = [
   },
 ];
 
+// A journal of the original file, written before each break and removed after it is undone, so
+// a run that dies mid-break (SIGKILL, a shell timeout) is repaired by the next run's first step.
+const JOURNAL = join(root, "node_modules/.cache/verify-bound-forms-mutant.json");
+const BUILD_TIMEOUT = 10 * 60_000;
+const CHECK_TIMEOUT = 5 * 60_000;
+
 function buildCore() {
   // tsc still emits when a break doesn't typecheck, so the break lands in dist either way.
-  spawnSync("pnpm", ["exec", "turbo", "run", "build", "--filter=@askdb/core", "--output-logs=none"], { cwd: root, stdio: "ignore" });
+  const build = spawnSync("pnpm", ["exec", "turbo", "run", "build", "--filter=@askdb/core", "--output-logs=none"], { cwd: root, stdio: "ignore", timeout: BUILD_TIMEOUT });
+  if (build.status !== 0 && build.error) throw build.error;
 }
 
-function checkPasses() {
+/** The check's exit status and whether fast-check reported a property failure. */
+function runCheck() {
   const run = spawnSync("pnpm", ["exec", "vitest", "run", "--config", "../../vitest.config.ts", "src/verification/bound-forms-agree.test.ts"], {
     cwd: join(root, "packages/sqlite"),
-    stdio: "ignore",
+    encoding: "utf8",
+    timeout: CHECK_TIMEOUT,
   });
-  return run.status === 0;
+  const output = `${run.stdout ?? ""}${run.stderr ?? ""}`;
+  return { passed: run.status === 0, propertyFailed: output.includes("Property failed") };
+}
+
+/** Put back the file a dead run left broken, and rebuild core. Returns whether there was one. */
+function restoreFromJournal() {
+  if (!existsSync(JOURNAL)) return false;
+  const { file, original } = JSON.parse(readFileSync(JOURNAL, "utf8"));
+  writeFileSync(join(root, file), original);
+  rmSync(JOURNAL);
+  buildCore();
+  return true;
+}
+
+if (restoreFromJournal()) console.log("restored a file an interrupted run left broken");
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(signal, () => {
+    restoreFromJournal();
+    process.exit(130);
+  });
+}
+
+// The check must pass unbroken, or every break below would read as caught.
+buildCore();
+const baseline = runCheck();
+if (!baseline.passed) {
+  console.log("baseline: the check fails with no break applied; fix it before reading any break");
+  process.exit(2);
 }
 
 const only = process.argv[2] === undefined ? undefined : Number(process.argv[2]);
@@ -76,14 +114,19 @@ for (const [i, brk] of BREAKS.entries()) {
     ok = false;
     continue;
   }
+  mkdirSync(dirname(JOURNAL), { recursive: true });
+  writeFileSync(JOURNAL, JSON.stringify({ file: brk.file, original }));
   try {
     writeFileSync(path, original.replace(brk.old, brk.new));
     buildCore();
-    const caught = !checkPasses();
-    console.log(`break ${n}: ${caught ? "caught" : "MISSED"}: ${brk.what}`);
+    // Caught means the property itself failed, not that vitest exited non-zero for another reason.
+    const { passed, propertyFailed } = runCheck();
+    const caught = !passed && propertyFailed;
+    console.log(`break ${n}: ${caught ? "caught" : passed ? "MISSED" : "ERRORED (the check failed without a property failure)"}: ${brk.what}`);
     ok &&= caught;
   } finally {
     writeFileSync(path, original);
+    rmSync(JOURNAL, { force: true });
   }
 }
 buildCore();

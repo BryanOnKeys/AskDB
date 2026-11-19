@@ -22,7 +22,7 @@ This directory is the maintained source for verifying AskDB's user-facing behavi
 
 - CLI proof is the evidence record: command, exit code, stdout, stderr.
 - HTTP proof is the evidence record: request, status, response body.
-- Generation proof also includes `vctl model requests`, showing the question and schema reached the model.
+- Generation proof also includes `vctl model requests` (an `NN-<label>.jsonl` file, one request per line), showing the question and schema reached the model.
 - A drive that changes files includes a second, read-only view of them (`ls`, or reading the file in the project).
 - UI proof is a screenshot and an accessibility snapshot, saved to the evidence folder, with Studio's URL visible.
 - Name the model each proof used: fake, or live with its model name.
@@ -32,7 +32,7 @@ This directory is the maintained source for verifying AskDB's user-facing behavi
 
 Each feature file starts with an H1 title and one paragraph describing the user-visible behavior, then exactly four H2 sections in this order:
 
-1. `Sub-features` lists short IDs with one line for each behavior, ending `Scripted: <replay path>` or `Agent-driven.` A replay runs the same steps as the `Driving` section and names its tests by these IDs.
+1. `Sub-features` lists short IDs with one line for each behavior, ending `Scripted: <replay path>` (one or more paths, joined by `and`) or `Agent-driven.` A replay runs the same steps as the `Driving` section and names its tests by these IDs.
 2. `How to get to it (user POV)` lists every user entry point.
 3. `Driving it with control-askdb` starts with `Preconditions:`, then labeled bullets that pair each user action with an exact command and the observable result.
 4. `Gotchas` lists traps that waste or invalidate a run.

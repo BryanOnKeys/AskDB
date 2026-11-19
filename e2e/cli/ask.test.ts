@@ -28,7 +28,8 @@ describe("ask-cli", () => {
 
     const prompt = run.modelRequests({ label: "ask-generate-prompt" }).at(-1)!.body;
     expect(prompt).toContain("Which customers bought the most units?");
-    expect(prompt).toContain("customers");
+    // A column name the question doesn't contain: only the schema can put it in the prompt.
+    expect(prompt).toContain("customer_id");
   });
 
   it("ask-refuse-write: refuses a non-read-only reply with exit 1", () => {
