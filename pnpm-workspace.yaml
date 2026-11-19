@@ -39,6 +39,12 @@ overrides:
   eslint>minimatch: ^11.0.1
   "@eslint/config-array>minimatch": ^11.0.1
   "@typescript-eslint/typescript-estree>minimatch": ^11.0.1
+  # effect: GHSA-7589-6fvf-x4pw (high) — ReDoS in the regex Schema.TemplateLiteral compiles. Patched in 3.22.1.
+  #   Reached through @askdb/prisma > @prisma/internals > @prisma/config, which pins effect 3.20.0 exactly (still so in
+  #   @prisma/config 7.10.1, the latest release on 2026-11-19). 3.22.1 is a minor on the same 3.x line. The override only fixes this repo's
+  #   lockfile: hosts that install @askdb/prisma resolve @prisma/config's own pin. Drop it once @prisma/config moves
+  #   to effect >= 3.22.1.
+  "@prisma/config>effect": ^3.22.1
 allowBuilds:
   '@prisma/engines': true
   better-sqlite3: true
