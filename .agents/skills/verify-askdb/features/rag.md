@@ -4,9 +4,9 @@
 
 ## Sub-features
 
-- `rag-index` indexes a schema folder and prints JSON stats.
-- `rag-reindex` reuses unchanged chunks on a second index.
-- `rag-query` returns the top `k` chunks for a question, the matching column first.
+- `rag-index` indexes a schema folder and prints JSON stats. Scripted: `e2e/cli/rag.test.ts`.
+- `rag-reindex` reuses unchanged chunks on a second index. Scripted: `e2e/cli/rag.test.ts`.
+- `rag-query` returns the top `k` chunks for a question, the matching column first. Scripted: `e2e/cli/rag.test.ts`.
 
 ## How to get to it (user POV)
 

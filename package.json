@@ -13,6 +13,7 @@
     "check-updates:all": "npm run check-updates -- --target latest --errorLevel 1",
     "test": "pnpm exec turbo run test",
     "test:watch": "vitest",
+    "e2e": "pnpm exec turbo run e2e --filter=@askdb/e2e",
     "lint": "pnpm exec turbo run lint",
     "docs:build": "pnpm -C apps/docs-site build",
     "docs:preview": "pnpm -C apps/docs-site preview",

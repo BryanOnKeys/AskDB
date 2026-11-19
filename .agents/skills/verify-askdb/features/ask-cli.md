@@ -4,11 +4,11 @@
 
 ## Sub-features
 
-- `ask-generate` prints the model's SQL for a question, after the schema and question reach the model.
-- `ask-refuse-write` refuses a non-read-only reply with `SqlValidationError` and exit 1.
-- `ask-sensitive-warning` warns on stderr when the SQL references a sensitive column, and still exits 0.
-- `ask-explain` adds an `-- explain --` block with the checks that ran.
-- `ask-mock-sql` takes SQL from `--mock-sql` instead of a model, and still validates it.
+- `ask-generate` prints the model's SQL for a question, after the schema and question reach the model. Scripted: `e2e/cli/ask.test.ts`.
+- `ask-refuse-write` refuses a non-read-only reply with `SqlValidationError` and exit 1. Scripted: `e2e/cli/ask.test.ts`.
+- `ask-sensitive-warning` warns on stderr when the SQL references a sensitive column, and still exits 0. Scripted: `e2e/cli/ask.test.ts`.
+- `ask-explain` adds an `-- explain --` block with the checks that ran. Scripted: `e2e/cli/ask.test.ts`.
+- `ask-mock-sql` takes SQL from `--mock-sql` instead of a model, and still validates it. Scripted: `e2e/cli/ask.test.ts`.
 
 ## How to get to it (user POV)
 

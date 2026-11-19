@@ -1,10 +1,10 @@
 # AskDB verification map
 
-This directory is the maintained source for verifying AskDB's user-facing behavior. Read this index before driving AskDB, then use the matching feature file as the recipe. `vctl` means `node .agents/skills/verify-askdb/control-askdb.mjs`, run from the repo root.
+This directory is the maintained source for verifying AskDB's user-facing behavior. Read this index before driving AskDB, then use the matching feature file as the recipe. `vctl` means `node e2e/harness/control-askdb.mjs`, run from the repo root. Each sub-feature ends `Scripted: <replay>` when a replay in `e2e/` asserts it on every PR, or `Agent-driven.` when only an agent verifies it.
 
 ## Baseline preconditions
 
-- The CLI, HTTP API and Studio are built from this checkout: `pnpm exec turbo run build --filter=askdb --filter=@askdb/http-api --filter=@askdb/studio`.
+- The CLI, HTTP API and Studio are built from this checkout: `pnpm exec turbo run build --filter=@askdb/e2e^...` (`pnpm e2e` builds them too).
 - `vctl setup` has printed `run <id> ready`, and `vctl doctor` prints no `FAIL`.
 - The run's project holds `shop.db` (customers `Ada`, `Grace`, `Linus`, `Margaret`; products; orders), `schemas/orders-users-sensitive.schema` (sensitive column `users.secret_recovery_token`) and `schemas/agency-multi-tenant.schema` (tenant policy over agencies, sub-agencies and clients).
 - Its config points at the fake model, introspects `./shop.db` into `./askdb`, uses the mock embedder with a file store, and turns Studio execute on for `./shop.db`.
@@ -32,7 +32,7 @@ This directory is the maintained source for verifying AskDB's user-facing behavi
 
 Each feature file starts with an H1 title and one paragraph describing the user-visible behavior, then exactly four H2 sections in this order:
 
-1. `Sub-features` lists short IDs with one line for each behavior.
+1. `Sub-features` lists short IDs with one line for each behavior, ending `Scripted: <replay path>` or `Agent-driven.` A replay runs the same steps as the `Driving` section and names its tests by these IDs.
 2. `How to get to it (user POV)` lists every user entry point.
 3. `Driving it with control-askdb` starts with `Preconditions:`, then labeled bullets that pair each user action with an exact command and the observable result.
 4. `Gotchas` lists traps that waste or invalidate a run.

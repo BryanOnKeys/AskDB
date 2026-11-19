@@ -12,6 +12,8 @@ packages:
   - "!examples/find-the-right-tables"
   # Shared multi-engine test fixture (replaces Pagila); see fixtures/multi-engine/README.md.
   - "fixtures/multi-engine"
+  # Scripted replays of the verify-askdb feature map (private; never published).
+  - "e2e"
 publicHoistPattern:
   - "*turbo*"
 # Transitive-dependency pins we carry ahead of upstream.

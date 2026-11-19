@@ -4,17 +4,17 @@
 
 ## Sub-features
 
-- `introspect-write` writes `schema.json` for the configured SQLite file into an output folder.
-- `introspect-print` prints the schema JSON on stdout without writing a folder.
-- `introspect-diff` reports `changed` against an existing schema folder.
-- `introspect-templates` prints the catalog SQL for an engine.
+- `introspect-write` writes `schema.json` for the configured SQLite file into an output folder. Scripted: `e2e/cli/introspect.test.ts`.
+- `introspect-print` prints the schema JSON on stdout without writing a folder. Scripted: `e2e/cli/introspect.test.ts`.
+- `introspect-diff` reports `changed` against an existing schema folder. Scripted: `e2e/cli/introspect.test.ts`.
+- `introspect-templates` prints the catalog SQL for Postgres, and refuses an engine that has no templates. Scripted: `e2e/cli/introspect.test.ts`.
 
 ## How to get to it (user POV)
 
 - Run `askdb introspect` in a project whose config sets `introspection.provider` and its connection.
 - Run `askdb introspect --engine sqlite --url <file> --out <dir>` to name them.
 - Add `--print`, or `--diff <existing-dir>`.
-- Run `askdb introspect templates --engine <engine>`.
+- Run `askdb introspect templates --engine postgres`.
 
 ## Driving it with control-askdb
 
@@ -27,7 +27,7 @@ Preconditions:
 - **Config defaults.** Run `vctl cli --label introspect-config -- introspect`. Exit `0`, with the same `Wrote askdb/schema.json` line: the engine, file and folder came from `askdb.config.ts`.
 - **Print.** Run `vctl cli --label introspect-print -- introspect --engine sqlite --url shop.db --print`. Exit `0`; stdout is schema JSON naming `customers`.
 - **Diff, unchanged.** Run `vctl cli --label introspect-diff -- introspect --engine sqlite --url shop.db --diff askdb`. Exit `0`; stdout is JSON with `"changed": false`.
-- **Templates.** Run `vctl cli --label introspect-templates -- introspect templates --engine sqlite`. Exit `0`; stdout is catalog SQL.
+- **Templates.** Run `vctl cli --label introspect-templates -- introspect templates --engine postgres`. Exit `0`; stdout is catalog SQL starting `-- schemas`, with `FROM pg_catalog.pg_namespace`. With `--engine sqlite` the exit is `1` and stderr says templates are `currently supported only for --engine postgres.`
 
 ## Gotchas
 

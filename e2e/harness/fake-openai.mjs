@@ -1,7 +1,8 @@
 #!/usr/bin/env node
+// @ts-check
 // A stand-in OpenAI endpoint for verify-askdb: answers the Responses and Chat Completions APIs
 // with the text in <run-dir>/model-reply.txt, read on every request, and appends each request
-// body to <run-dir>/model-requests.jsonl. control-askdb.mjs starts and stops it; run it by hand
+// body to <run-dir>/model-requests.jsonl. askdb-run.mjs starts and stops it; run it by hand
 // only to debug it:  node fake-openai.mjs <run-dir> <port>
 import { appendFileSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -21,6 +22,7 @@ function replyText() {
   }
 }
 
+/** @param {string} text */
 function responsesBody(text) {
   return {
     id: "resp_verify",
@@ -36,6 +38,7 @@ function responsesBody(text) {
   };
 }
 
+/** @param {string} text */
 function chatBody(text) {
   return {
     id: "chatcmpl_verify",
@@ -51,7 +54,7 @@ const server = createServer(async (req, res) => {
   const chunks = [];
   for await (const chunk of req) chunks.push(Buffer.from(chunk));
   const body = Buffer.concat(chunks).toString("utf8");
-  const send = (status, json) => {
+  const send = (/** @type {number} */ status, /** @type {unknown} */ json) => {
     res.writeHead(status, { "content-type": "application/json" });
     res.end(JSON.stringify(json));
   };

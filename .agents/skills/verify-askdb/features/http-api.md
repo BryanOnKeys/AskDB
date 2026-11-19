@@ -4,12 +4,12 @@
 
 ## Sub-features
 
-- `api-health` answers `{"ok":true}`.
-- `api-ask` returns `{ ok: true, correlationId, sql, usage, sensitiveGuardrail }` for a question.
-- `api-sensitive` reports sensitive references in `sensitiveGuardrail` without refusing.
-- `api-refuse-write` returns 400 with `sql_validation_error` when the model's SQL isn't read-only.
-- `api-refuse-execute` returns 400 for an `execute` field.
-- `api-not-found` returns 404 for any other route.
+- `api-health` answers `{"ok":true}`. Scripted: `e2e/api/http-api.test.ts`.
+- `api-ask` returns `{ ok: true, correlationId, sql, usage, sensitiveGuardrail }` for a question. Scripted: `e2e/api/http-api.test.ts`.
+- `api-sensitive` reports sensitive references in `sensitiveGuardrail` without refusing. Scripted: `e2e/api/http-api.test.ts`.
+- `api-refuse-write` returns 400 with `sql_validation_error` when the model's SQL isn't read-only. Scripted: `e2e/api/http-api.test.ts`.
+- `api-refuse-execute` returns 400 for an `execute` field. Scripted: `e2e/api/http-api.test.ts`.
+- `api-not-found` returns 404 for any other route. Scripted: `e2e/api/http-api.test.ts`.
 
 ## How to get to it (user POV)
 
