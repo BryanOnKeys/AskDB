@@ -190,6 +190,31 @@ describe("AskDB Studio server", () => {
     expect(retrieved.results[0].text).toEqual(expect.any(String));
   });
 
+  // #1047: the server's type allowlist predated the tenant-policy chunk type, so a query filtered
+  // to tenant-policy alone came back with every type.
+  it("filters a RAG query to tenant-policy chunks, and refuses an unknown, empty or non-array type list", async () => {
+    installStudioRuntime();
+    const server = createStudioServer({ schema: copyFixture("agency-multi-tenant.schema") });
+    servers.push(server);
+    const baseUrl = await listen(server);
+    await postJson(`${baseUrl}/api/rag/index`, {});
+
+    const retrieved = await postJson(`${baseUrl}/api/rag/query`, {
+      question: "Which agency owns a client?",
+      k: 25,
+      types: ["tenant-policy"],
+    });
+    expect(retrieved.results.length).toBeGreaterThan(0);
+    expect(new Set(retrieved.results.map((result: { type: string }) => result.type))).toEqual(new Set(["tenant-policy"]));
+
+    // Each of these would otherwise widen the query to every type.
+    for (const types of [["tenant-policy", "nope"], [], "tenant-policy", null]) {
+      const refused = await postRaw(`${baseUrl}/api/rag/query`, { question: "Which agency?", types });
+      expect(refused.status, JSON.stringify(types)).toBe(400);
+      await expect(refused.json()).resolves.toMatchObject({ error: { message: expect.stringContaining("`types`") } });
+    }
+  });
+
   // #375 review: roots whose labels derive the same placeholder are a load error. Studio
   // used to write such a policy, return 500, and then fail every request, because the
   // workspace no longer loaded. The save must be refused with 400, and nothing written.
@@ -1740,10 +1765,10 @@ describe("a schema whose provider has no AskDB dialect (#886, ADR 0039)", () => 
   });
 });
 
-function copyFixture(): string {
+function copyFixture(name = "orders-users.schema"): string {
   const dir = mkdtempSync(join(tmpdir(), "askdb-studio-"));
-  const schemaDir = join(dir, "orders-users.schema");
-  cpSync(join(repoRoot, "fixtures/schemas/orders-users.schema"), schemaDir, {
+  const schemaDir = join(dir, name);
+  cpSync(join(repoRoot, "fixtures/schemas", name), schemaDir, {
     recursive: true,
   });
   return schemaDir;

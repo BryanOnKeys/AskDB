@@ -106,6 +106,7 @@ import type {
   SuggestResponse,
   SuggestTenantPolicyResponse,
 } from "./shared/api.js";
+import { STUDIO_CHUNK_TYPES } from "./shared/rag.js";
 import {
   EXECUTE_DRIVER_REGISTRY,
   executeDialectFor,
@@ -2104,15 +2105,25 @@ function parseRagQuery(body: unknown): { question: string; k: number; types?: Ch
   if (k < 1 || k > 25) {
     throw new StudioHttpError(400, "`k` must be between 1 and 25.");
   }
-  const allowed = new Set<ChunkType>(["table", "column", "cql", "question", "concept", "relationship"]);
   let types: ChunkType[] | undefined;
-  if (Array.isArray(body.types)) {
-    types = body.types.filter((type): type is ChunkType => typeof type === "string" && allowed.has(type as ChunkType));
+  if (body.types !== undefined) {
+    // Leave `types` out to search every type. An unknown type is refused rather than dropped, and
+    // so is an empty list: either would otherwise widen the filter to every type, the opposite of
+    // what the caller asked for (#1047).
+    const allowed = new Set<string>(STUDIO_CHUNK_TYPES);
+    if (
+      !Array.isArray(body.types) ||
+      body.types.length === 0 ||
+      body.types.some((type) => typeof type !== "string" || !allowed.has(type))
+    ) {
+      throw new StudioHttpError(400, `\`types\` must be an array of chunk types: ${STUDIO_CHUNK_TYPES.join(", ")}.`);
+    }
+    types = body.types as ChunkType[];
   }
   return {
     question: body.question.trim(),
     k,
-    ...(types && types.length > 0 ? { types } : {}),
+    ...(types ? { types } : {}),
   };
 }
 
