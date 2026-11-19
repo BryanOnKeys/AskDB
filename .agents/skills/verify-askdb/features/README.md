@@ -1,0 +1,51 @@
+# AskDB verification map
+
+This directory is the maintained source for verifying AskDB's user-facing behavior. Read this index before driving AskDB, then use the matching feature file as the recipe. `vctl` means `node .agents/skills/verify-askdb/control-askdb.mjs`, run from the repo root.
+
+## Baseline preconditions
+
+- The CLI, HTTP API and Studio are built from this checkout: `pnpm exec turbo run build --filter=askdb --filter=@askdb/http-api --filter=@askdb/studio`.
+- `vctl setup` has printed `run <id> ready`, and `vctl doctor` prints no `FAIL`.
+- The run's project holds `shop.db` (customers `Ada`, `Grace`, `Linus`, `Margaret`; products; orders), `schemas/orders-users-sensitive.schema` (sensitive column `users.secret_recovery_token`) and `schemas/agency-multi-tenant.schema` (tenant policy over agencies, sub-agencies and clients).
+- Its config points at the fake model, introspects `./shop.db` into `./askdb`, uses the mock embedder with a file store, and turns Studio execute on for `./shop.db`.
+- Drive only the processes this run started (`vctl doctor` lists them).
+
+## Driving conventions
+
+- Start each recipe from the baseline unless its preconditions say otherwise.
+- Set the model's answer with `vctl model reply "<sql>"` before each drive that generates SQL. Set it again for the next drive: the reply stays until you change it.
+- Treat every command as literal: keep quoted questions, flags and SQL unchanged.
+- Label each drive with the feature ID: `vctl cli --label <feature-id> -- …`.
+- Prefer roles and accessible names in Studio's UI over CSS selectors or position.
+
+## Proof and skip reporting
+
+- CLI proof is the evidence record: command, exit code, stdout, stderr.
+- HTTP proof is the evidence record: request, status, response body.
+- Generation proof also includes `vctl model requests`, showing the question and schema reached the model.
+- A drive that changes files includes a second, read-only view of them (`ls`, or reading the file in the project).
+- UI proof is a screenshot and an accessibility snapshot, saved to the evidence folder, with Studio's URL visible.
+- Name the model each proof used: fake, or live with its model name.
+- Report an unreachable entry point with the command you tried and the missing precondition. Never report it as verified through another path.
+
+## Feature entry contract
+
+Each feature file starts with an H1 title and one paragraph describing the user-visible behavior, then exactly four H2 sections in this order:
+
+1. `Sub-features` lists short IDs with one line for each behavior.
+2. `How to get to it (user POV)` lists every user entry point.
+3. `Driving it with control-askdb` starts with `Preconditions:`, then labeled bullets that pair each user action with an exact command and the observable result.
+4. `Gotchas` lists traps that waste or invalidate a run.
+
+Keep implementation details out of the map: name only user paths, stable handles, required state, commands and observable proof.
+
+## Features
+
+- [Ask from the CLI](./ask-cli.md) covers `askdb ask`: generated SQL, the read-only refusal, the sensitive-column warning, `--explain` and `--mock-sql`.
+- [Introspect a database](./introspect.md) covers `askdb introspect` on SQLite: writing a schema folder, `--print` and `--diff`.
+- [HTTP API](./http-api.md) covers `askdb-http`: `/health`, `POST /ask`, its error shape and the execute refusal.
+- [Studio Playground](./studio-playground.md) covers generating and executing SQL in Studio, through the UI and through its API.
+- [Initialize a project](./init.md) covers `askdb init` writing a config and `.env.example` non-interactively.
+- [Schema retrieval (RAG)](./rag.md) covers `askdb rag index` and `askdb rag query` with the mock embedder.
+
+Not mapped yet: `askdb bundle`; Studio's Overview, Tables, Concepts, Tenancy, RAG Index and Settings screens; Studio's setup wizard; `askdb introspect` on Postgres, MySQL and SQL Server (they need the multi-engine fixture, `pnpm fixture:up`; see the consumer-lab skill's guardrails before you start it).
