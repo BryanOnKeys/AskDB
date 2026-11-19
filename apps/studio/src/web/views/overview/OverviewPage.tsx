@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useEffectEvent, useState } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { Loader2, Sparkles, Shield, History, Zap, RefreshCw, Table2 } from "lucide-react";
 import { useWorkspace, type StatusMessage } from "../../contexts/workspace-context";
 import { useRag } from "../../contexts/rag-context";
@@ -144,7 +144,15 @@ export function OverviewPage() {
                               <span className="muted tiny" style={{ marginLeft: 6 }}>{level}</span>
                             </td>
                             <td style={{ textAlign: "right" }}>
-                              <span className="suggest-link">Enrich</span>
+                              {/* The keyboard and screen-reader way in; the row click is a mouse shortcut (#1049). */}
+                              <Link
+                                to={`/tables/${t.physical.schema}/${t.physical.name}/enrichment`}
+                                className="suggest-link"
+                                aria-label={`Enrich ${t.physical.schema}.${t.physical.name}`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                Enrich
+                              </Link>
                             </td>
                           </tr>
                         );

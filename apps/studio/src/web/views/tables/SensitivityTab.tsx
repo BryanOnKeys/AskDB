@@ -87,6 +87,7 @@ export function SensitivityTab() {
                     <td>{col.sensitive ? <Badge variant="danger">sensitive</Badge> : <span className="muted">—</span>}</td>
                     <td>
                       <select
+                        aria-label={`Sensitivity override for ${col.name}`}
                         style={{ fontSize: 12, padding: "2px 6px", borderRadius: 4, border: "1px solid var(--border)" }}
                         value={colDraft.sensitive === undefined ? "inherit" : colDraft.sensitive ? "true" : "false"}
                         onChange={(e) => {

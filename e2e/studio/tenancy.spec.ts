@@ -3,7 +3,8 @@
  *
  * Protects: creating a tenant policy from the Tenancy screen, by hand and from the model's draft,
  * reviewing it and saving it to tenant-policy.md.
- * Catches: a policy form that saves the wrong front matter, or a draft that never reaches review.
+ * Catches: a policy form that saves the wrong front matter, a review screen whose controls lose
+ * their names, or a draft that never reaches review.
  * No production seam: it drives the built Studio (fake model for the draft) and reads the file it writes.
  */
 import { readFileSync } from "node:fs";
@@ -46,12 +47,16 @@ test.describe("tenancy-manual", () => {
     await expect(page.getByRole("heading", { name: "Review Tenant Policy" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Tenant Roots (1)" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Scoped Tables (1)" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Remove scoped table table:public.orders" })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: /^Label for table:public\.customers/ })).toHaveValue("customers");
+    await page.getByRole("textbox", { name: "Policy body" }).fill("Customers are tenants.");
     await page.getByRole("button", { name: "Confirm & Save" }).click();
 
     await expect(page.getByRole("heading", { name: "Multi-Tenancy", level: 1 })).toBeVisible();
     await expect(page.getByText(/100% table coverage \(3\/3\)/)).toBeVisible();
     const file = readFileSync(join(studio.run.project, "askdb/tenant-policy.md"), "utf8");
     for (const line of POLICY) expect(file).toContain(line);
+    expect(file).toContain("Customers are tenants.");
   });
 });
 

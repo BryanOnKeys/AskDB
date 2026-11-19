@@ -2,10 +2,12 @@
  * Replay of verify-askdb's `studio-tables` feature (.agents/skills/verify-askdb/features/studio-tables.md).
  *
  * Protects: the Tables screen: the list and its filters, saving enrichment to tables/<name>.md,
- * drafting every empty field with the model and using a draft, the Schema tab, and untracking a
- * table from the Sensitivity tab.
- * Catches: an edit that never saves, a draft that never lands in the file, or a tab that shows
- * the wrong columns.
+ * drafting every empty field or one field with the model and using a draft, the Schema tab,
+ * untracking a table and escalating sensitivity from the Sensitivity tab, and Revert. Every
+ * field is found by its own accessible name.
+ * Catches: an edit that never saves, a draft that never lands in the file, a tab that shows the
+ * wrong columns, a field that loses its name or shares it with another, or a typed value that
+ * loses its spaces.
  * No production seam: it drives the built Studio (fake model for drafts) and reads the files it writes.
  */
 import { readFileSync } from "node:fs";
@@ -51,8 +53,8 @@ test("tables-suggest-all: drafts every empty field, and a used draft saves", asy
   await expect(page.getByText("Drafted 10 fields. Review each draft, then Use or Dismiss it.")).toBeVisible({ timeout: 30_000 });
   expect(studio.run.modelRequests().length).toBeGreaterThanOrEqual(10);
 
-  // The first "Drafts for Description" group is the table's own description.
-  await page.getByRole("group", { name: "Drafts for Description" }).first().getByRole("button", { name: "Use" }).click();
+  // "Drafts for Description" is the table's own; a column's is "Drafts for Description for <column>".
+  await page.getByRole("group", { name: "Drafts for Description", exact: true }).getByRole("button", { name: "Use" }).click();
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText("Saved products.")).toBeVisible();
   expect(tableFile("products")).toContain("A shop customer, one row per buyer.");
@@ -76,4 +78,55 @@ test("tables-untrack: the Sensitivity tab saves tracked: false", async ({ page }
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText("Saved orders.")).toBeVisible();
   expect(tableFile("orders")).toContain("tracked: false");
+});
+
+test("tables-enrich-save: Primary entity typed key by key keeps its spaces", async ({ page }) => {
+  await page.goto(`${studio.url}/tables/public/customers/enrichment`);
+  await page.getByRole("textbox", { name: "Primary entity", exact: true }).pressSequentially("Customer Account");
+  await expect(page.getByRole("textbox", { name: "Primary entity", exact: true })).toHaveValue("Customer Account");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Saved customers.")).toBeVisible();
+  expect(tableFile("customers")).toContain("primaryEntity: Customer Account");
+});
+
+test("tables-suggest-one: one field's Suggest drafts candidates for that field only", async ({ page }) => {
+  studio.run.modelReply("The customer's display name.\n---\nFull name as entered at checkout.", { raw: true });
+  await page.goto(`${studio.url}/tables/public/customers/enrichment`);
+  await page.getByRole("button", { name: "Suggest Description for name", exact: true }).click();
+  const drafts = page.getByRole("group", { name: "Drafts for Description for name", exact: true });
+  await expect(drafts.getByRole("button", { name: "Use" })).toHaveCount(2);
+  await expect(drafts.getByText("Drafts from the model. Nothing is written until Use and Save.")).toBeVisible();
+  await expect(page.getByRole("group", { name: /^Drafts for/ })).toHaveCount(1);
+
+  await drafts.getByRole("button", { name: "Use" }).last().click();
+  await expect(drafts).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Description for name", exact: true })).toHaveValue("Full name as entered at checkout.");
+  await expect(page.getByRole("textbox", { name: "Description", exact: true })).toHaveValue("");
+});
+
+test("tables-revert: Revert discards an unsaved edit", async ({ page }) => {
+  await page.goto(`${studio.url}/tables/public/products/enrichment`);
+  const description = page.getByRole("textbox", { name: "Description for category", exact: true });
+  await description.fill("Edited, then thrown away.");
+  await expect(page.getByText("Unsaved changes", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Revert" }).click();
+  await expect(page.getByText("Reverted products.")).toBeVisible();
+  await expect(description).toHaveValue("");
+  await expect(page.getByRole("button", { name: "Revert" })).toBeDisabled();
+});
+
+test("tables-sensitivity: escalate a column, then the table, and see the effective result", async ({ page }) => {
+  await page.goto(`${studio.url}/tables/public/customers/sensitivity`);
+  const country = page.getByRole("row", { name: /^country/ });
+  await page.getByRole("combobox", { name: "Sensitivity override for country", exact: true }).selectOption({ label: "Sensitive" });
+  await expect(country.getByRole("cell").last()).toHaveText("sensitive");
+  await expect(page.getByRole("row", { name: /^name/ }).getByRole("cell").last()).toHaveText("—");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Saved customers.")).toBeVisible();
+  expect(tableFile("customers")).toMatch(/id: 'table:public\.customers#country'\n\s+sensitive: true/);
+
+  await expect(page.getByText("Effective: not sensitive")).toBeVisible();
+  await page.getByRole("combobox", { name: /^Override/ }).selectOption({ label: "Sensitive" });
+  await expect(page.getByText(/^Effective:\s*sensitive/)).toBeVisible();
+  await expect(page.getByRole("row", { name: /^name/ }).getByRole("cell").last()).toHaveText("sensitive");
 });

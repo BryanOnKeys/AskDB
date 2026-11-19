@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Loader2, Sparkles, ChevronRight } from "lucide-react";
 import type { SuggestSource } from "@askdb/enrich";
 import { useWorkspace } from "../../contexts/workspace-context";
@@ -47,10 +47,13 @@ export function EnrichmentTab() {
               disabledReason={tableBlock}
               source={{ scope: "table", tableId, field: "description" }}
             >
-              <Textarea
-                value={draft.description}
-                onChange={(e) => updateTableDraft(tableId, (d) => ({ ...d, description: e.target.value }))}
-              />
+              {(id) => (
+                <Textarea
+                  id={id}
+                  value={draft.description}
+                  onChange={(e) => updateTableDraft(tableId, (d) => ({ ...d, description: e.target.value }))}
+                />
+              )}
             </FieldWithSuggest>
 
             <div style={{ display: "grid", gap: 16, gridTemplateColumns: "1fr 1fr", alignItems: "start" }}>
@@ -60,10 +63,13 @@ export function EnrichmentTab() {
                 disabledReason={tableBlock}
                 source={{ scope: "table", tableId, field: "aliases" }}
               >
-                <ListInput
-                  value={draft.aliases}
-                  onChange={(v) => updateTableDraft(tableId, (d) => ({ ...d, aliases: v }))}
-                />
+                {(id) => (
+                  <ListInput
+                    id={id}
+                    value={draft.aliases}
+                    onChange={(v) => updateTableDraft(tableId, (d) => ({ ...d, aliases: v }))}
+                  />
+                )}
               </FieldWithSuggest>
               <FieldWithSuggest
                 aiConfigured={aiConfigured}
@@ -71,15 +77,20 @@ export function EnrichmentTab() {
                 disabledReason={tableBlock}
                 source={{ scope: "table", tableId, field: "primaryEntity" }}
               >
-                <Input
-                  value={draft.primaryEntity ?? ""}
-                  onChange={(e) =>
-                    updateTableDraft(tableId, (d) => ({
-                      ...d,
-                      primaryEntity: e.target.value.trim() || undefined,
-                    }))
-                  }
-                />
+                {(id) => (
+                  <Input
+                    id={id}
+                    value={draft.primaryEntity ?? ""}
+                    onChange={(e) =>
+                      updateTableDraft(tableId, (d) => ({
+                        ...d,
+                        // Kept as typed: trimming per keystroke ate every space (#1052). The saved
+                        // front matter is trimmed when the draft is written.
+                        primaryEntity: e.target.value || undefined,
+                      }))
+                    }
+                  />
+                )}
               </FieldWithSuggest>
             </div>
 
@@ -110,11 +121,14 @@ export function EnrichmentTab() {
             disabledReason={tableBlock}
             source={{ scope: "table", tableId, field: "commonQueryLanguage" }}
           >
-            <Textarea
-              className="min-h-36"
-              value={draft.commonQueryLanguage ?? ""}
-              onChange={(e) => updateTableDraft(tableId, (d) => ({ ...d, commonQueryLanguage: e.target.value }))}
-            />
+            {(id) => (
+              <Textarea
+                id={id}
+                className="min-h-36"
+                value={draft.commonQueryLanguage ?? ""}
+                onChange={(e) => updateTableDraft(tableId, (d) => ({ ...d, commonQueryLanguage: e.target.value }))}
+              />
+            )}
           </FieldWithSuggest>
         </div>
       </section>
@@ -164,29 +178,37 @@ export function EnrichmentTab() {
                     <FieldWithSuggest
                       aiConfigured={aiConfigured}
                       label="Description"
+                      context={column.name}
                       source={{ scope: "column", tableId, columnId: column.id, field: "description" }}
                       disabledReason={columnBlock(column.id)}
                     >
-                      <Textarea
-                        value={columnDraft.description ?? ""}
-                        onChange={(e) =>
-                          updateColumnDraft(tableId, column.id, (d) => ({ ...d, description: e.target.value }))
-                        }
-                      />
+                      {(id) => (
+                        <Textarea
+                          id={id}
+                          value={columnDraft.description ?? ""}
+                          onChange={(e) =>
+                            updateColumnDraft(tableId, column.id, (d) => ({ ...d, description: e.target.value }))
+                          }
+                        />
+                      )}
                     </FieldWithSuggest>
                     <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr 1fr", alignItems: "start" }}>
                       <FieldWithSuggest
                         aiConfigured={aiConfigured}
                         label="Aliases"
+                        context={column.name}
                         source={{ scope: "column", tableId, columnId: column.id, field: "aliases" }}
                         disabledReason={columnBlock(column.id)}
                       >
-                        <ListInput
-                          value={columnDraft.aliases}
-                          onChange={(v) => updateColumnDraft(tableId, column.id, (d) => ({ ...d, aliases: v }))}
-                        />
+                        {(id) => (
+                          <ListInput
+                            id={id}
+                            value={columnDraft.aliases}
+                            onChange={(v) => updateColumnDraft(tableId, column.id, (d) => ({ ...d, aliases: v }))}
+                          />
+                        )}
                       </FieldWithSuggest>
-                      <Field label="Enum notes">
+                      <Field label="Enum notes" context={column.name}>
                         <ListInput
                           value={columnDraft.enum}
                           onChange={(v) => updateColumnDraft(tableId, column.id, (d) => ({ ...d, enum: v }))}
@@ -194,6 +216,7 @@ export function EnrichmentTab() {
                       </Field>
                       <SensitiveSelect
                         label="Sensitivity override"
+                        context={column.name}
                         value={columnDraft.sensitive}
                         forced={columnSensitivity.forced}
                         onChange={(v) => updateColumnDraft(tableId, column.id, (d) => ({ ...d, sensitive: v }))}
@@ -232,17 +255,23 @@ export function EnrichmentTab() {
 function FieldWithSuggest({
   aiConfigured,
   children,
+  context,
   disabledReason,
   label,
   source,
 }: {
   aiConfigured: boolean;
-  children: ReactNode;
+  /** Renders the field's control; give it `id` so the label names it. */
+  children: (id: string) => ReactNode;
+  /** The column a column field belongs to, so each control's name is unique on the page (#1048). */
+  context?: string;
   /** Why Suggest is off here, under `modes.omitSensitiveFromPrompt` (#639). */
   disabledReason?: string;
   label: string;
   source: SuggestSource;
 }) {
+  const id = useId();
+  const name = context ? `${label} for ${context}` : label;
   const { suggestions, suggestingKeys, requestSuggestion, applySuggestion, dismissSuggestion } = useWorkspace();
   const key = suggestionKey(source);
   const suggesting = suggestingKeys.has(key);
@@ -253,21 +282,25 @@ function FieldWithSuggest({
   return (
     <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <span className="muted" style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
+        <label htmlFor={id} className="muted" style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+          {label}
+          {context && <span className="sr-only"> for {context}</span>}
+        </label>
         <button
           type="button"
           className="suggest-link"
           disabled={!aiConfigured || Boolean(disabledReason) || suggesting}
           onClick={() => void requestSuggestion(source)}
           title={title}
+          aria-label={`Suggest ${name}`}
         >
           {suggesting ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
           Suggest
         </button>
       </div>
-      {children}
+      {children(id)}
       {suggestion && (
-        <div className="inline-drafts" role="group" aria-label={`Drafts for ${label}`}>
+        <div className="inline-drafts" role="group" aria-label={`Drafts for ${name}`}>
           {suggestion.candidates.map((candidate) => (
             <div key={candidate.text} className="candidate">
               <p>{candidate.text}</p>
@@ -368,11 +401,14 @@ const UNSAVED_SENSITIVITY =
   "Save your sensitivity changes before suggesting: Suggest sends the saved schema, so until then it would still name the columns you just marked.";
 
 function SensitiveSelect({
+  context,
   forced,
   label,
   onChange,
   value,
 }: {
+  /** The column this select belongs to, so each one's name is unique on the page. */
+  context?: string;
   /** Sensitive regardless of the override, so "Not sensitive" could not take effect. */
   forced: boolean;
   label: string;
@@ -381,7 +417,10 @@ function SensitiveSelect({
 }) {
   return (
     <label style={{ display: "grid", gap: 6 }}>
-      <span className="muted" style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
+      <span className="muted" style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+        {label}
+        {context && <span className="sr-only"> for {context}</span>}
+      </span>
       <select
         className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
         value={value === undefined ? "inherit" : value ? "true" : "false"}

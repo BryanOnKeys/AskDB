@@ -1,8 +1,10 @@
 /**
  * Replay of verify-askdb's `studio-concepts` feature (.agents/skills/verify-askdb/features/studio-concepts.md).
  *
- * Protects: adding a concept with a table link from the Concepts screen, and saving it to concepts.md.
- * Catches: a form that can't add, a link search that finds nothing, or a save that writes the wrong shape.
+ * Protects: adding a concept with a table link from the Concepts screen (a link removed from the
+ * keyboard on the way), and saving it to concepts.md.
+ * Catches: a form that can't add, a link search that finds nothing, a link chip that only a mouse
+ * can remove, or a save that writes the wrong shape.
  * No production seam: it drives the built Studio and reads the file it writes.
  */
 import { readFileSync } from "node:fs";
@@ -24,6 +26,13 @@ test("concepts-empty, concepts-add, concepts-save: a linked concept lands in con
   await page.getByRole("textbox", { name: /^Synonyms/ }).fill("ltv, clv");
   await page.getByRole("textbox", { name: "Search tables or columns" }).fill("customers");
   await page.getByRole("option", { name: /^T\s*public\.customers$/ }).click();
+  // A link chip's remove button works from the keyboard, and is named for its link.
+  await page.getByRole("textbox", { name: "Search tables or columns" }).fill("orders");
+  await page.getByRole("option", { name: /^T\s*public\.orders$/ }).click();
+  await page.getByRole("button", { name: "Remove link to public.orders" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "Remove link to public.orders" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Remove link to public.customers" })).toBeVisible();
   await page.getByRole("textbox", { name: /^Description/ }).fill("Total quantity a customer has ordered across all orders.");
   // Two buttons share the name while the form is open: the header's and the form's submit.
   await page.getByRole("button", { name: "Add concept" }).last().click();

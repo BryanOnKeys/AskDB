@@ -386,7 +386,7 @@ function ConceptDetail({
             <h3>{concept.label}</h3>
             <Badge variant="outline">{concept.id}</Badge>
           </div>
-          <button type="button" className="btn ghost sm" onClick={onRemove} title="Remove concept" style={{ color: "var(--red-600)" }}>
+          <button type="button" className="btn ghost sm" onClick={onRemove} title="Remove concept" aria-label="Remove concept" style={{ color: "var(--red-600)" }}>
             Remove
           </button>
         </div>
@@ -580,12 +580,18 @@ function LinksInput({
               <button
                 type="button"
                 className="links-chip-remove"
+                // mousedown keeps focus in the search box; the removal is on click, so Enter and
+                // Space work too (#1049).
                 onMouseDown={(e) => {
                   e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onClick={(e) => {
                   e.stopPropagation();
                   removeLink(id);
                 }}
                 title="Remove"
+                aria-label={`Remove link to ${labelFor(id)}`}
               >
                 <X size={10} />
               </button>
@@ -604,7 +610,8 @@ function LinksInput({
           className="links-search-input"
           placeholder={value.length ? "Add another…" : "Search tables or columns…"}
           value={query}
-          onChange={(e) => { setQuery(e.target.value); setHighlightIndex(0); }}
+          // Typing reopens the list: after a pick the box keeps focus, so onFocus alone left it shut.
+          onChange={(e) => { setQuery(e.target.value); setHighlightIndex(0); setOpen(true); }}
           onFocus={() => setOpen(true)}
           onKeyDown={handleKeyDown}
         />
