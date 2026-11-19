@@ -12,6 +12,7 @@ import {
   suggest,
   suggestTenantPolicy,
 } from "../api";
+import { isDraftEdited, refreshDrafts } from "../lib/drafts";
 import { parseList } from "../lib/format";
 import { suggestionKey } from "../lib/suggest-all";
 
@@ -127,7 +128,7 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
     case "refresh_complete": return {
       ...state,
       workspace: action.workspace,
-      drafts: refreshDraftMap(state, action.workspace),
+      drafts: refreshDrafts(state.drafts, savedDrafts(state.workspace), savedDrafts(action.workspace)),
     };
     case "set_workspace": return { ...state, workspace: action.payload };
     case "workspace_and_drafts": return {
@@ -201,9 +202,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [tables, selectedTableId],
   );
   const selectedDraft = selectedTable ? drafts[selectedTable.physical.id] ?? selectedTable.draft : null;
-  const dirty =
-    Boolean(selectedTable && selectedDraft) &&
-    JSON.stringify(selectedDraft) !== JSON.stringify(selectedTable?.draft);
+  const dirty = Boolean(selectedTable) && isDraftEdited(selectedDraft ?? undefined, selectedTable?.draft);
 
   const filteredTables = useMemo(() => {
     const query = tableSearch.trim().toLowerCase();
@@ -393,18 +392,9 @@ function makeDraftMap(workspace: StudioWorkspaceDto): Record<string, TableDraft>
   return Object.fromEntries(workspace.tables.map((t) => [t.physical.id, clone(t.draft)]));
 }
 
-/**
- * Drafts for a refreshed workspace: a table with unsaved edits keeps them; every other table takes
- * the server's draft. Tables that no longer exist drop out.
- */
-function refreshDraftMap(state: WorkspaceState, next: StudioWorkspaceDto): Record<string, TableDraft> {
-  const previous = new Map(state.workspace?.tables.map((t) => [t.physical.id, t.draft]) ?? []);
-  return Object.fromEntries(next.tables.map((t) => {
-    const id = t.physical.id;
-    const draft = state.drafts[id];
-    const edited = draft !== undefined && previous.has(id) && JSON.stringify(draft) !== JSON.stringify(previous.get(id));
-    return [id, edited ? draft : clone(t.draft)];
-  }));
+/** Each table's saved draft, by table id (empty before the first load). */
+function savedDrafts(workspace: StudioWorkspaceDto | null): Record<string, TableDraft> {
+  return Object.fromEntries(workspace?.tables.map((t) => [t.physical.id, t.draft]) ?? []);
 }
 
 function clone<T>(value: T): T {
