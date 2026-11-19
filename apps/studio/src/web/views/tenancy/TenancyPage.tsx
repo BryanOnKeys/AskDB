@@ -1,4 +1,4 @@
-import { useCallback, useReducer, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useReducer, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -19,7 +19,7 @@ import { Field } from "../../components/ui/field";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { StatusBanner } from "../../components/common/StatusBanner";
-import type { StatusMessage } from "../../contexts/workspace-context";
+import { STATUS_CLEAR_MS, type StatusMessage } from "../../contexts/workspace-context";
 import type { StudioTableDto, SuggestTenantPolicyResponse } from "@/shared/api";
 import { columnOptions, manualTenantPolicyFrontmatter, type ManualTenantPolicyForm } from "../../lib/manual-tenant-policy";
 
@@ -30,16 +30,30 @@ export function TenancyPage() {
     handleSaveTenantPolicy,
     handleSuggestTenantPolicy,
     saveStatus,
+    setSaveStatus,
     busy,
   } = useWorkspace();
   const { refreshRagStatus } = useRag();
   const [editingSavedPolicy, setEditingSavedPolicy] = useState(false);
+  // Shown on the summary a save opens. It lives here, not in the form, because a save swaps the
+  // form for the summary and the form's own state goes with it (#1051).
+  const [savedStatus, setSavedStatus] = useState<StatusMessage | null>(null);
 
   const onSaveTenantPolicy = useCallback(async (frontmatter: TenantPolicyFrontmatter, body?: string) => {
     const saved = await handleSaveTenantPolicy(frontmatter, body);
-    if (saved) void refreshRagStatus();
+    if (saved) {
+      void refreshRagStatus();
+      setSavedStatus({ kind: "success", text: "Tenant policy saved." });
+    }
     return saved;
   }, [handleSaveTenantPolicy, refreshRagStatus]);
+
+  const clearSavedStatus = useEffectEvent(() => setSavedStatus(null));
+  useEffect(() => {
+    if (!savedStatus) return;
+    const id = setTimeout(() => clearSavedStatus(), STATUS_CLEAR_MS);
+    return () => clearTimeout(id);
+  }, [savedStatus]);
 
   if (!workspace) return null;
 
@@ -56,6 +70,7 @@ export function TenancyPage() {
           onSave={onSaveTenantPolicy}
           onSuggest={handleSuggestTenantPolicy}
           saveStatus={saveStatus}
+          onEnterReview={() => setSaveStatus(null)}
         />
       </main>
     );
@@ -85,7 +100,8 @@ export function TenancyPage() {
     <main className="main-pane">
       <TenancyView
         tenantPolicy={tenantPolicy}
-        onEdit={() => setEditingSavedPolicy(true)}
+        savedStatus={savedStatus}
+        onEdit={() => { setSavedStatus(null); setEditingSavedPolicy(true); }}
       />
     </main>
   );
@@ -93,9 +109,11 @@ export function TenancyPage() {
 
 function TenancyView({
   tenantPolicy,
+  savedStatus,
   onEdit,
 }: {
   tenantPolicy: NormalizedTenantPolicy;
+  savedStatus: StatusMessage | null;
   onEdit: () => void;
 }) {
   const coverageByClassification = tenantPolicy.coverage.reduce(
@@ -127,6 +145,7 @@ function TenancyView({
           </button>
         </div>
       </div>
+      {savedStatus && <StatusBanner status={savedStatus} />}
       <div className="main-body">
         <div className="stack" style={{ padding: "var(--pad-y) var(--pad-x)" }}>
           <CollapsibleSection title="Coverage">
@@ -308,6 +327,8 @@ function TenancyEditSavedPolicy({
 
 type CreateFormState = ManualTenantPolicyForm & {
   mode: "choose" | "manual" | "review";
+  /** Set once the user types a label, so picking another root table no longer replaces it (#1055). */
+  rootLabelTouched: boolean;
   draftStatus: StatusMessage | null;
   draftFrontmatter: TenantPolicyFrontmatter | null;
   draftBody: string;
@@ -331,17 +352,25 @@ type CreateFormAction =
 
 function createFormReducer(state: CreateFormState, action: CreateFormAction): CreateFormState {
   switch (action.type) {
-    case "set_mode": return { ...state, mode: action.payload };
+    // A status belongs to the screen it was set on: "AI draft ready" shouldn't follow Start Over
+    // back. A draft still loading keeps its status, so its spinner and disabled button stay.
+    case "set_mode": return {
+      ...state,
+      mode: action.payload,
+      draftStatus: state.draftStatus?.kind === "loading" ? state.draftStatus : null,
+    };
     case "set_draftStatus": return { ...state, draftStatus: action.payload };
     case "set_draftFrontmatter": return { ...state, draftFrontmatter: action.payload };
     case "set_draftBody": return { ...state, draftBody: action.payload };
     case "set_enforcement": return { ...state, enforcement: action.payload };
     case "set_rootTenantIdColumn": return { ...state, rootTenantIdColumn: action.payload };
-    case "set_rootLabel": return { ...state, rootLabel: action.payload };
+    // Blank counts as untyped, as it does when the policy is built (manual-tenant-policy.ts).
+    case "set_rootLabel": return { ...state, rootLabel: action.payload, rootLabelTouched: action.payload.trim() !== "" };
     case "select_root_table": return {
       ...state,
       rootTableId: action.tableId,
-      rootLabel: action.label,
+      // The table's name is only a default: a label the user typed stays.
+      rootLabel: state.rootLabelTouched ? state.rootLabel : action.label,
       rootTenantIdColumn: "",
     };
     case "toggle_global_table": return {
@@ -382,6 +411,7 @@ const initialCreateFormState: CreateFormState = {
   rootTableId: "",
   rootTenantIdColumn: "",
   rootLabel: "",
+  rootLabelTouched: false,
   globalTableIds: [],
   scopedTableColumns: {},
 };
@@ -394,6 +424,7 @@ function TenancyCreateForm({
   onSave,
   onSuggest,
   saveStatus,
+  onEnterReview,
 }: {
   tables: StudioTableDto[];
   schemaId: string;
@@ -402,6 +433,8 @@ function TenancyCreateForm({
   onSave: (frontmatter: TenantPolicyFrontmatter, body?: string) => Promise<boolean>;
   onSuggest: () => Promise<SuggestTenantPolicyResponse>;
   saveStatus: StatusMessage | null;
+  /** Clears a status left from another screen, so the review screen's own message shows. */
+  onEnterReview: () => void;
 }) {
   const [state, dispatch] = useReducer(createFormReducer, initialCreateFormState);
   const { mode, draftStatus, draftFrontmatter, draftBody, draftWarnings, enforcement, rootTableId, rootTenantIdColumn, rootLabel, globalTableIds, scopedTableColumns } = state;
@@ -416,6 +449,7 @@ function TenancyCreateForm({
     try {
       const result = await onSuggest();
       dispatch({ type: "ai_draft_complete", frontmatter: result.frontmatter, body: result.body, warnings: result.warnings });
+      onEnterReview();
     } catch (error) {
       dispatch({ type: "set_draftStatus", payload: { kind: "error", text: error instanceof Error ? error.message : String(error) } });
     }
@@ -424,6 +458,7 @@ function TenancyCreateForm({
   function handleManualToReview() {
     if (!manualFrontmatter) return;
     dispatch({ type: "manual_to_review", frontmatter: manualFrontmatter, body: "# Tenant Policy\n\n\n\n## Hierarchy\n\n\n\n## Scope Rules\n\n\n\n## Sensitive Interactions\n\n" });
+    onEnterReview();
   }
 
   function handleConfirm() {
@@ -637,6 +672,7 @@ function TenancyCreateForm({
       body={draftBody}
       warnings={draftWarnings}
       busy={busy}
+      draftStatus={draftStatus}
       saveStatus={saveStatus}
       onFrontmatterChange={(fm) => dispatch({ type: "set_draftFrontmatter", payload: fm })}
       onBodyChange={(b) => dispatch({ type: "set_draftBody", payload: b })}
@@ -652,6 +688,7 @@ function TenancyReviewDraft({
   body,
   warnings = [],
   busy,
+  draftStatus = null,
   saveStatus,
   onFrontmatterChange,
   onBodyChange,
@@ -667,6 +704,8 @@ function TenancyReviewDraft({
   body: string;
   warnings?: string[];
   busy: Set<string>;
+  /** How the draft reached review (`AI draft ready for review.`); the create form passes it (#1051). */
+  draftStatus?: StatusMessage | null;
   saveStatus: StatusMessage | null;
   onFrontmatterChange: (fm: TenantPolicyFrontmatter) => void;
   onBodyChange: (body: string) => void;
@@ -734,6 +773,7 @@ function TenancyReviewDraft({
         </div>
       </div>
 
+      {draftStatus && !saveStatus && <StatusBanner status={draftStatus} />}
       {saveStatus && <StatusBanner status={saveStatus} />}
 
       <div className="main-body">
