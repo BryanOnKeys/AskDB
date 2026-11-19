@@ -43,6 +43,7 @@ vctl setup            # or: vctl setup --live   (real OpenAI: OPENAI_API_KEY in 
 ```bash
 vctl api start [schema-dir]      # ready: "AskDB HTTP API listening on"; default schema: schemas/orders-users-sensitive.schema
 vctl studio start [schema-dir]   # ready: "AskDB Studio is running at"; same default
+vctl studio start --no-schema    # no --schema: Studio opens ./askdb, or its setup wizard when that doesn't exist
 vctl api stop / vctl studio stop
 ```
 
@@ -67,6 +68,7 @@ Run it before the first drive, after any drive that surprised you, and before yo
 
 ```bash
 vctl model reply "SELECT name FROM customers"        # what the fake model answers from now on; bare SQL is fenced for you
+vctl model reply --raw "<text or JSON>"              # unfenced: Studio's suggestions (candidates split on --- lines) and tenant-policy draft (JSON)
 vctl cli --label <name> -- <askdb args>              # e.g. -- ask --question "…"; prints stdout/stderr, exits with askdb's code
 vctl model requests --label <name>                   # saves the prompts the model received
 vctl api-request <METHOD> <path> ['<json>']          # the HTTP API
@@ -116,4 +118,4 @@ Stops only the processes this run started: each is matched by PID and command li
 
 Verification scaffolding: `setup` symlinks `@askdb/config` and `better-sqlite3` from `e2e/node_modules` into the project's `node_modules`, standing in for what an installed project resolves. `cleanup` deletes it with the project.
 
-Keep the map and the replays current with `maintain-verification-skill`, when it's installed.
+Keep the map and the replays current as you change AskDB: the feature entry contract in [`features/README.md`](features/README.md) and *Write a replay* above say how. A full pass over every feature, from source and live, is the maintainer's `maintain-verification-skill` (from the `Ygilany/skills` repository), when it's installed.

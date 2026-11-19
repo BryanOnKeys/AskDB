@@ -42,10 +42,10 @@ const HELP = `control-askdb <command> [--run <id>] [--label <name>]   (default r
   setup [--live]                 new run: scratch project, shop.db, schema copies, fake model (or live key)
   doctor                         is this run worth driving? exit 1 on any FAIL
   cli [--label L] -- <args>      run \`askdb <args>\` in the project; evidence NN-L.json
-  model reply <text|sql>         what the fake model answers from now on
+  model reply [--raw] <text|sql> what the fake model answers from now on (--raw: sent unwrapped)
   model requests [--label L]     save the prompts the fake model received as evidence
   api start [schema] | api stop          HTTP API on the run's port (default schema: schemas/orders-users-sensitive.schema)
-  studio start [schema] | studio stop    Studio on the run's port
+  studio start [schema|--no-schema] | studio stop   Studio on the run's port; --no-schema opens ./askdb or the setup wizard
   api-request <METHOD> <path> [json]     request to the HTTP API; evidence
   studio-request <METHOD> <path> [json]  request to Studio's API with its token and Origin; evidence
   cleanup                        stop what this run started, delete its project; evidence stays`;
@@ -80,8 +80,10 @@ try {
       const run = AskdbRun.load(runId());
       const [sub, ...words] = rest;
       if (sub === "reply") {
-        if (words.length === 0) die("model reply needs the reply text (bare SQL is wrapped in a ```sql block).");
-        run.modelReply(words.join(" "));
+        const raw = words[0] === "--raw";
+        if (raw) words.shift();
+        if (words.length === 0) die("model reply needs the reply text (bare SQL is wrapped in a ```sql block; --raw sends it unchanged).");
+        run.modelReply(words.join(" "), { raw });
         console.log(`fake model now replies: ${words.join(" ")}`);
       } else if (sub === "requests") {
         console.log(`${run.modelRequests({ label: label ?? "model-requests" }).length} model request(s) saved to ${run.evidence}`);
@@ -93,7 +95,8 @@ try {
       const run = AskdbRun.load(runId());
       const [sub, schema] = rest;
       if (sub === "start") {
-        const proc = await run.start(command, schema);
+        // `--no-schema` starts it without one: Studio then opens ./askdb, or its setup wizard.
+        const proc = await run.start(command, schema === "--no-schema" ? null : schema);
         console.log(`${command} running: pid ${proc.pid}, ${run.url(command)} (log ${proc.log})`);
       } else if (sub === "stop") {
         console.log((await run.stop(command)) ? `${command} stopped` : `${command} was not running`);

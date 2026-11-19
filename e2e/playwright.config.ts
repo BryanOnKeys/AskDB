@@ -1,12 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// Studio's UI replays. global-setup.ts makes one run, introspects shop.db and starts Studio;
-// global-teardown.ts cleans it up. Retries stay off: a replay that needs one is a flaky replay.
+// Studio's UI replays. Each spec file makes its own run (studio/fixtures.ts). Retries stay off:
+// a replay that needs one is a flaky replay.
 export default defineConfig({
   testDir: "studio",
   testMatch: "**/*.spec.ts",
-  globalSetup: "./studio/global-setup.ts",
-  globalTeardown: "./studio/global-teardown.ts",
   fullyParallel: false,
   workers: 1,
   retries: 0,

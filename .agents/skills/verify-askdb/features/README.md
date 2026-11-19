@@ -32,7 +32,7 @@ This directory is the maintained source for verifying AskDB's user-facing behavi
 
 Each feature file starts with an H1 title and one paragraph describing the user-visible behavior, then exactly four H2 sections in this order:
 
-1. `Sub-features` lists short IDs with one line for each behavior, ending `Scripted: <replay path>` or `Agent-driven.` A replay runs the same steps as the `Driving` section and names its tests by these IDs.
+1. `Sub-features` lists short IDs with one line for each behavior, ending `Scripted: <replay path>` (one or more paths, joined by `and`) or `Agent-driven.` A replay runs the same steps as the `Driving` section and names its tests by these IDs.
 2. `How to get to it (user POV)` lists every user entry point.
 3. `Driving it with control-askdb` starts with `Preconditions:`, then labeled bullets that pair each user action with an exact command and the observable result.
 4. `Gotchas` lists traps that waste or invalidate a run.
@@ -60,27 +60,49 @@ flowchart LR
     httpapi["HTTP API"]
   end
   subgraph studio["askdb studio"]
-    playground["Studio Playground"]
+    screens["Studio: 8 screens<br/>(second diagram)"]
   end
   schema[("askdb/schema.json")]
 
   shop --> introspect --> schema
   schema --> ask
   schema --> rag
-  schema --> playground
+  schema --> screens
   fixtures --> ask
   fixtures --> httpapi
   model --> ask
   model --> httpapi
-  model --> playground
-  shop -- execute --> playground
+  model --> screens
+  shop -- execute --> screens
+```
+
+Studio's screens, and the files in the schema folder each one writes. The setup wizard runs first when there is no schema folder, and writes the config and `schema.json` itself.
+
+```mermaid
+flowchart LR
+  wizard["Setup wizard"] --> config[("askdb.config.ts")]
+  wizard --> schema2[("schema.json")]
+  overview["Overview"] -- Resync --> schema2
+  tables["Tables"] --> tablesmd[("tables/*.md")]
+  concepts["Concepts"] --> conceptsmd[("concepts.md")]
+  tenancy["Tenancy"] --> policy[("tenant-policy.md")]
+  ragui["RAG Index"] --> emb[("schema.embeddings.*")]
+  playground["Playground"] --> hist[("playground-history.json")]
+  settings["Settings (read-only)"]
 ```
 
 - [Ask from the CLI](./ask-cli.md) covers `askdb ask`: generated SQL, the read-only refusal, the sensitive-column warning, `--explain` and `--mock-sql`.
 - [Introspect a database](./introspect.md) covers `askdb introspect` on SQLite: writing a schema folder, `--print` and `--diff`.
 - [HTTP API](./http-api.md) covers `askdb-http`: `/health`, `POST /ask`, its error shape and the execute refusal.
+- [Studio Overview](./studio-overview.md) covers the landing screen's cards, pending tables, shortcuts and `Resync schema`.
+- [Studio Tables](./studio-tables.md) covers the table list, enrichment and its model drafts, the Schema tab and the Sensitivity tab.
+- [Studio Concepts](./studio-concepts.md) covers adding a linked concept and saving `concepts.md`.
+- [Studio Tenancy](./studio-tenancy.md) covers drafting a tenant policy by hand or with the model, reviewing it and saving `tenant-policy.md`.
+- [Studio RAG Index](./studio-rag-index.md) covers the index status, `Build Index` and the query debugger.
 - [Studio Playground](./studio-playground.md) covers generating and executing SQL in Studio, through the UI and through its API.
+- [Studio Settings](./studio-settings.md) covers the read-only workspace, RAG store and schema warnings.
+- [Studio setup wizard](./studio-setup-wizard.md) covers Studio's first run: writing the config, then introspecting from the browser.
 - [Initialize a project](./init.md) covers `askdb init` writing a config and `.env.example` non-interactively.
 - [Schema retrieval (RAG)](./rag.md) covers `askdb rag index` and `askdb rag query` with the mock embedder.
 
-Not mapped yet: `askdb bundle`; Studio's Overview, Tables, Concepts, Tenancy, RAG Index and Settings screens; Studio's setup wizard; `askdb introspect` on Postgres, MySQL and SQL Server (they need the multi-engine fixture, `pnpm fixture:up`; see the consumer-lab skill's guardrails before you start it).
+Not mapped yet: `askdb bundle`; `askdb introspect` on Postgres, MySQL and SQL Server (they need the multi-engine fixture, `pnpm fixture:up`; see the consumer-lab skill's guardrails before you start it).
