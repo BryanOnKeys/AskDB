@@ -1,11 +1,11 @@
 /**
  * How each SQL check reads a statement, per dialect: the lexer readings it must pass under. This
- * module is the one place that decides them (#815, ADR 0010),
- * and {@link readSql} lexes each reading once per statement, so a reading changes in one place.
+ * module is the one place that decides them (#815, ADR 0010), and {@link readSql} lexes each
+ * reading once per statement, so a reading changes in one place.
  * The checks stay heuristics (ADR 0012).
  *
  * The sets differ by check. #815 moved them here unchanged; merging them would tighten some checks
- * and loosen others, so that is its own decision.
+ * and loosen others, so that is its own decision (#1087).
  *
  * | Check | A built-in engine | Any other id, or no dialect |
  * |---|---|---|

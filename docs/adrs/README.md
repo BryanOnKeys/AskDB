@@ -12,7 +12,7 @@ An ADR is a decision card that a reviewer reads in two minutes. The `domain-mode
 - **Size:** 350 words or fewer outside tables and the diagram, in plain English.
 - **Content:** the decision, not the behaviour. Function names, error codes and the issue-by-issue story live in the code, the tests and git.
 - **Changes:** a changed decision is a new ADR that supersedes the old one. A new case under the same decision is a test. An ADR has no dated amendment notes.
-- **Index:** the PR that adds, supersedes or rewords an ADR updates its row here, in 25 words or fewer.
+- **Index:** the PR that adds, supersedes or rewords an ADR updates its row here. The Keep cell has 25 words or fewer.
 
 Every ADR uses this format. ADR 0034 is superseded and keeps its old text.
 
@@ -29,7 +29,7 @@ Numbering skips 0020.
 | [0005](0005-askdb-config-and-env-bootstrap.md) `@askdb/config` loads `.env` and `askdb.config.*` into one snapshot | Accepted | Only `@askdb/config` reads `process.env` (one exception: ADR 0036). Apps use `getAskDbRuntimeConfig()`. The HTTP server never reloads over a host's snapshot. |
 | [0006](0006-ai-provider-integration-strategy.md) Core is BYO-model; `@askdb/ai` owns the provider registry | Accepted | Core never depends on `@askdb/ai` or a provider SDK. Built-in providers and raw `LanguageModel`s are equal. A package that depends on core declares `ai`; the apps provide `zod`. |
 | [0007](0007-connector-registry.md) Apps dispatch through the connector registry | Accepted (the registry's home: ADR 0008) | Apps never switch on the engine themselves. |
-| [0008](0008-engine-packages-and-connector-registry.md) One package per engine; shared mechanics in `@askdb/introspect/kit` | Accepted | Don't copy kit helpers into an engine. Each engine writes its own driver `import()` with a chained `.catch()`. Check for a package on disk, not through Node's resolver (Yarn Plug'n'Play excepted). |
+| [0008](0008-engine-packages-and-connector-registry.md) One package per engine; shared mechanics in `@askdb/introspect/kit` | Accepted | Don't copy kit helpers into an engine. Each engine writes its own driver `import()` with `.catch()`. Check for a package on disk, not through Node's resolver. |
 | [0009](0009-studio-local-api-protection.md) Studio's local API: Host allowlist, same-origin checks, a per-launch token | Accepted | The token proves same-origin, not identity. Keep the Host check, `no-store` and frame denial. |
 | [0010](0010-sql-guardrail-decision-point.md) One decision point for SQL guardrails, enforced at return and at rebind | Accepted | Only the decision point reads the modes. A rebind runs the tenant and sensitive checks again and takes tenant IDs from the scope. |
 | [0011](0011-connection-labels-from-parsed-parts.md) Connection labels are built from parsed parts | Accepted | Never build a label by masking the raw string. Adapters return parts, never label text. |

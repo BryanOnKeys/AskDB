@@ -54,6 +54,7 @@ How to stop a template that failed a check from running again:
 | A tenant placeholder left in the SQL under a `global` scope throws, in `ask()` and at rebind. | `packages/core/src/sql/tenant-placeholders.test.ts`, `rebind.test.ts` |
 | A `subtree` scope arrives at a rebind already expanded by core (ADR 0014). | `packages/core/src/sql/rebind.test.ts` |
 | A custom `AskDialect` skips the read-only check. With a tenant policy and any scope but `global`, the tenant check still refuses a statement that is not a query, a function whose reads it cannot see, and the Postgres planner-statistics relations. A change here needs a new ADR. | `packages/core/src/sql/tenant-guardrail.test.ts` |
+| Each path runs a fixed set of checks. `generateSelectSql()` runs no sensitive check, because it takes no sensitive mode. | `packages/core/src/sql/guardrails.test.ts` |
 | The mechanical renderer stays below tenant substitution and the guardrails. | `packages/core/src/module-layering.test.ts` |
 | A prepared query holds no verdict and stays at `version: 1`. | review |
 
