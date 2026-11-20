@@ -56,6 +56,15 @@ The product shape follows the Prisma Studio pattern: a CLI command starts a loca
 | `POST` | `/api/execute` | Run a validated SELECT (opt-in; `403` when `studio.execute.enabled` is false) |
 | `POST` | `/api/execute/install-driver` | Install the configured driver package (loopback only; execute must be enabled) |
 
+**`POST /api/suggest` errors.** Unknown references are rejected before AI configuration is resolved and before any model is created:
+
+- An unknown `source.tableId` returns HTTP 404 (`No such table: <tableId>`).
+- An unknown `source.columnId` returns HTTP 404 (`Column not found: <columnId> in <schema>.<table>`).
+- A `source.columnId` must belong to the table named by `source.tableId`; a real column of another table still returns HTTP 404 scoped to the requested table.
+- Missing AI configuration retains its existing HTTP 400 behaviour (a message naming the missing setting).
+
+These are `{"error": {"message": "…"}}` responses with no typed code, so callers tell them apart by status (#380).
+
 **Server startup:**
 ```bash
 askdb-studio --schema <path>   # default port 5556
@@ -105,7 +114,7 @@ These guards narrow the blast radius. They don't replace a read-only database ro
 - `@askdb/studio` depends on `@askdb/enrich` for all workspace logic (package assertion).
 - API contract tests: each endpoint returns the documented shape. Error responses are `{ "error": { "message": "…" } }` with no typed code, so callers tell them apart by status (#380).
 - Schema editing: `POST /api/tables/:tableId` saves draft and reloads workspace from disk; reloading Studio shows saved values.
-- AI suggestion: `POST /api/suggest` returns candidates; missing AI config returns `400` with a message naming the missing setting, not a 500.
+- AI suggestion: `POST /api/suggest` returns candidates; unknown table or column IDs return `404` (a column ID must belong to the table named by `tableId`), and these checks run before AI configuration is resolved; missing AI config returns `400` with a message naming the missing setting, not a 500.
 - RAG: `POST /api/rag/index` builds index with mock or configured embedder; `POST /api/rag/query` returns scored chunks.
 - Ask: `POST /api/ask` returns SQL and warnings; works with `ASKDB_MOCK_SQL` without a live model.
 - Request guard: spoofed `Host` → `403`; cross-origin POST → `403`; `text/plain` POST → `415`/`403`; missing or wrong token → `403`; served `index.html` contains the token.

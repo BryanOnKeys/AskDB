@@ -12,6 +12,7 @@ import {
 } from "@askdb/config";
 import type { AskDbConfig } from "@askdb/config";
 import { loadSchema, parseTableMarkdown } from "@askdb/core";
+import type { SuggestSource } from "@askdb/enrich";
 import { createMemoryStore, PgvectorDimensionMismatchError } from "@askdb/rag";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -101,6 +102,27 @@ describe("AskDB Studio server", () => {
     const server = createStudioServer({ schema: writeClinicSchema() });
     servers.push(server);
     return { baseUrl: await listen(server), model };
+  }
+
+  /**
+   * Submits a suggestion to the clinic Studio with AI unavailable, mirroring the setup used by
+   * the unknown-reference tests, and returns the raw response. Status-code and message
+   * assertions stay explicit in each test.
+   */
+  async function postUnconfiguredSuggest(source: SuggestSource): Promise<Response> {
+    resetAskDbRuntimeForTests();
+    installStudioRuntime({
+      ...STUDIO_TEST_BASE,
+      ai: {
+        ...STUDIO_TEST_BASE.ai,
+        providerConfig: { openai: {} },
+      },
+    });
+    const schemaDir = writeClinicSchema();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+    return postRaw(`${baseUrl}/api/suggest`, { source });
   }
 
   /** Asks the clinic Studio for a tenant-policy draft; returns the draft and the prompt the model received. */
@@ -396,6 +418,93 @@ describe("AskDB Studio server", () => {
     expect(message).toContain("modes.omitSensitiveFromPrompt");
     // Error messages never name a sensitive identifier.
     expect(message).not.toContain("diagnosis_code");
+    expect(model.requests).toHaveLength(0);
+  });
+
+  it("returns 404 for a suggestion for an unknown table, and calls no model", async () => {
+    const { baseUrl, model } = await startClinicStudio({
+      omitSensitiveFromPrompt: false,
+      reply: "A suggestion.",
+    });
+
+    const response = await postRaw(`${baseUrl}/api/suggest`, {
+      source: {
+        scope: "table",
+        tableId: "table:public.nonexistent",
+        field: "description",
+      },
+    });
+
+    expect(response.status).toBe(404);
+    const { message } = ((await response.json()) as { error: { message: string } }).error;
+    expect(message).toBe(`No such table: table:public.nonexistent`);
+    expect(model.requests).toHaveLength(0);
+  });
+
+  it("returns 404 for a suggestion for an unknown column, and calls no model", async () => {
+    const { baseUrl, model } = await startClinicStudio({
+      omitSensitiveFromPrompt: false,
+      reply: "A suggestion.",
+    });
+
+    const response = await postRaw(`${baseUrl}/api/suggest`, {
+      source: {
+        scope: "column",
+        tableId: "table:public.patients",
+        columnId: "table:public.patients#nonexistent",
+        field: "description",
+      },
+    });
+
+    expect(response.status).toBe(404);
+    const { message } = ((await response.json()) as { error: { message: string } }).error;
+    expect(message).toBe("Column not found: table:public.patients#nonexistent in public.patients");
+    expect(model.requests).toHaveLength(0);
+  });
+
+  it("returns 404 for an unknown table even when AI is not configured", async () => {
+    const response = await postUnconfiguredSuggest({
+      scope: "table",
+      tableId: "table:public.nonexistent",
+      field: "description",
+    });
+
+    expect(response.status).toBe(404);
+    const { message } = ((await response.json()) as { error: { message: string } }).error;
+    expect(message).toBe(`No such table: table:public.nonexistent`);
+  });
+
+  it("returns 404 for an unknown column even when AI is not configured", async () => {
+    const response = await postUnconfiguredSuggest({
+      scope: "column",
+      tableId: "table:public.patients",
+      columnId: "table:public.patients#nonexistent",
+      field: "description",
+    });
+
+    expect(response.status).toBe(404);
+    const { message } = ((await response.json()) as { error: { message: string } }).error;
+    expect(message).toBe("Column not found: table:public.patients#nonexistent in public.patients");
+  });
+
+  it("returns 404 for a suggestion for a column of another table, and calls no model", async () => {
+    const { baseUrl, model } = await startClinicStudio({
+      omitSensitiveFromPrompt: false,
+      reply: "A suggestion.",
+    });
+
+    const response = await postRaw(`${baseUrl}/api/suggest`, {
+      source: {
+        scope: "column",
+        tableId: "table:public.patients",
+        columnId: "table:public.visits#id",
+        field: "description",
+      },
+    });
+
+    expect(response.status).toBe(404);
+    const { message } = ((await response.json()) as { error: { message: string } }).error;
+    expect(message).toBe("Column not found: table:public.visits#id in public.patients");
     expect(model.requests).toHaveLength(0);
   });
 
@@ -1981,6 +2090,16 @@ function writeClinicSchema(): string {
         name: "audit_trail",
         schema: "public",
         columns: [column("audit_trail", "id", { primaryKey: true })],
+      },
+      {
+        id: "table:public.visits",
+        name: "visits",
+        schema: "public",
+        columns: [
+          column("visits", "id", { primaryKey: true }),
+          column("visits", "patient_id"),
+          column("visits", "visited_on"),
+        ],
       },
     ],
   };

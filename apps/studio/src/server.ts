@@ -41,6 +41,7 @@ import {
   type AskGenerateDeps,
   type BuiltInDialectId,
   type DialectSpec,
+  type EnrichmentTarget,
   type NormalizedSchemaV2,
   type TenantPolicyFrontmatter,
   type TenantScope,
@@ -81,6 +82,7 @@ import {
   saveConcepts,
   saveTable,
   saveTenantPolicy,
+  SuggestSourceNotFoundError,
   type SuggestSource,
   type TableDraft,
   type Workspace,
@@ -720,6 +722,25 @@ function saveDraft(state: StudioState, tableId: string, draft: TableDraft): void
 }
 
 async function suggestForSource(state: StudioState, source: SuggestSource): Promise<SuggestResponse["candidates"]> {
+  // `loadSchema()` carries effective sensitivity (front-matter escalations included), and the
+  // prompt follows `modes.omitSensitiveFromPrompt` as `ask()` does (#625, ADR 0026).
+  requireWorkspace(state);
+  const schema = loadSchema(state.schemaDir);
+
+  // Reject unknown tables and columns before resolving AI config or creating the model.
+  // Table/column lookup rules live in `@askdb/enrich` (`buildSuggestionTarget` / `findTable`);
+  // Studio maps their typed not-found errors to HTTP 404 here, so no model is created for an
+  // invalid reference. The resolved target is reused below instead of re-looked-up.
+  let target: EnrichmentTarget;
+  try {
+    target = buildSuggestionTarget(schema, source);
+  } catch (error) {
+    if (error instanceof SuggestSourceNotFoundError) {
+      throw new StudioHttpError(404, error.message);
+    }
+    throw error;
+  }
+
   const rt = getAskDbRuntimeConfig();
   const aiConfig = ai.resolveAiConfigFromSection(rt.ai.language);
   if (!aiConfig) {
@@ -730,14 +751,10 @@ async function suggestForSource(state: StudioState, source: SuggestSource): Prom
   const providerOptions = reasoningEffort
     ? ai.resolveProviderOptions(aiConfig, { reasoningEffort })
     : undefined;
-  // `loadSchema()` carries effective sensitivity (front-matter escalations included), and the
-  // prompt follows `modes.omitSensitiveFromPrompt` as `ask()` does (#625, ADR 0026).
-  requireWorkspace(state);
-  const schema = loadSchema(state.schemaDir);
   let candidates: Awaited<ReturnType<typeof suggestEnrichment>>;
   try {
     candidates = await suggestEnrichment(
-      buildSuggestionTarget(schema, source),
+      target,
       buildSuggestionContext(schema, source.tableId),
       model,
       {
