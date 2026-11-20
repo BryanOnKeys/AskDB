@@ -85,7 +85,11 @@ The workspace root lists `@askdb/config` as a dev dependency so Node can resolve
 
 ## Dependency Audit
 
-CI's `audit` job (and `pnpm preflight`) runs `pnpm run audit` — [`audit-ci`](https://github.com/IBM/audit-ci) over `pnpm audit`, failing on any advisory of **moderate** severity or higher, in any dependency (dev-only ones included). Configuration lives in [`.audit-ci.json`](.audit-ci.json).
+`pnpm run audit` runs [`audit-ci`](https://github.com/IBM/audit-ci) over `pnpm audit`, failing on any advisory of **moderate** severity or higher, in any dependency (dev-only ones included). Configuration lives in [`.audit-ci.json`](.audit-ci.json). It runs in three places:
+
+- **CI's `audit` job**, on a PR or push to `main` that changes a dependency file: any `package.json` or `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.audit-ci.json` or `.npmrc` (`scripts/ci-changes.sh`). Other changes skip it, so a new advisory against a dependency already on `main` doesn't fail unrelated PRs.
+- **The daily scheduled audit** of `main` ([`audit-scheduled.yml`](.github/workflows/audit-scheduled.yml), also runnable by hand from the Actions tab). When it fails, it opens an issue titled "Dependency audit fails on main", or comments on the open one, naming the advisories. Fix it with the `repair-dependency-audit` skill and the steps below. The fixing PR changes a dependency file, so CI's `audit` job checks it.
+- **`pnpm preflight`**, locally, on every run.
 
 When it fails, prefer fixing over allowlisting:
 

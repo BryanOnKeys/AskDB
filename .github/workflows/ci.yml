@@ -5,17 +5,66 @@ on:
     branches: [main]
   pull_request:
 
-# Cancel stale PR runs; never cancel in-progress main pushes.
+# Latest wins on every ref, `main` included: a newer push cancels the older run. Only the
+# tip of `main` can release (release.yml acts only when the commit CI tested is still the
+# tip), so an older run's result is never used. Without cancelling, the group keeps one
+# pending run and drops it for the next push anyway.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
+  # ── 0. Changes ────────────────────────────────────────────────────────────
+  # What changed, for the jobs that skip work: `docs_only` (PRs only; docs-only
+  # PRs skip test, the unit tests, preflight, consumer-lab and e2e), `deps`
+  # (audit runs only when a dependency file changed) and `packed_readme`
+  # (preflight checks a package README's links). The rules and the cases that
+  # run everything are in scripts/ci-changes.sh.
+  #
+  # The filters are job-level `if:`s, not a workflow-level `paths:`: a skipped
+  # job reports success, so a required check never waits on a skipped job
+  # (see changesets.yml). Each `if:` skips only on an explicit `true`/`false`
+  # from here, and uses `!cancelled()`, so a failed `changes` runs everything.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.changes.outputs.docs_only }}
+      deps: ${{ steps.changes.outputs.deps }}
+      packed_readme: ${{ steps.changes.outputs.packed_readme }}
+    steps:
+      # Full history: a push diffs against `github.event.before`, a PR against its base.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Self-test the change rules
+        run: bash scripts/ci-changes.test.sh
+
+      - name: Detect what changed
+        id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          FORCED: ${{ github.event.forced }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            bash scripts/ci-changes.sh pr "$BASE_REF" | tee -a "$GITHUB_OUTPUT"
+          else
+            bash scripts/ci-changes.sh push "$BEFORE" "$AFTER" "$FORCED" | tee -a "$GITHUB_OUTPUT"
+          fi
+
   # ── 1. Build ──────────────────────────────────────────────────────────────
-  # Compiles all packages and seeds the Turbo cache for downstream jobs.
+  # Compiles all packages and seeds the Turbo cache for later runs. No job waits
+  # for it: each one builds what it uses (turbo's `lint`, `test` and `e2e` tasks
+  # depend on the builds they need; `pnpm smoke:install` and `pnpm lab:use .`
+  # build before packing), so they all start at once.
   build:
     runs-on: ubuntu-latest
     steps:
@@ -50,10 +99,17 @@ jobs:
   # ── 1b. Lint ──────────────────────────────────────────────────────────────
   # Every package's `lint` task: `tsc --noEmit` for the libraries/apps, plus
   # Studio's eslint + `tsconfig.web.json` typecheck and the docs site's
-  # `astro check`. None of these run anywhere else in CI. Turbo replays the
-  # upstream `build` outputs (`lint` depends on `^build`) from the cache.
+  # `astro check`. None of these run anywhere else in CI. `lint` depends on
+  # `^build`, so turbo builds (or replays from its cache) what each package imports.
+  #
+  # On docs-only PRs, where `test` doesn't run, it also runs the tests that read
+  # docs: the docs site's own suite (its build, links and prose checks) and the
+  # CLI's, which check the Quickstart page and the ADRs its help text names.
+  # `!cancelled()`: if `changes` fails, lint still runs (a skipped required check
+  # would pass).
   lint:
-    needs: build
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -84,11 +140,28 @@ jobs:
       - name: Lint + typecheck
         run: pnpm lint
 
+      # Called directly, not through turbo: the CLI's test hash doesn't cover the docs it
+      # reads, so turbo would replay a cached pass. Its spawn tests run dist/cli.js.
+      - name: Docs tests (docs-only pull requests)
+        if: needs.changes.outputs.docs_only == 'true'
+        run: |
+          pnpm -C apps/docs-site test
+          pnpm exec turbo run build --filter=askdb
+          pnpm -C apps/cli test
+
   # ── 1c. Dependency audit ──────────────────────────────────────────────────
   # `audit-ci` over `pnpm audit`, failing on moderate+ advisories. Allowlisted
   # advisories live in .audit-ci.json; each one needs a written rationale in
-  # CONTRIBUTING.md ("Dependency audit"). Independent of the build.
+  # CONTRIBUTING.md ("Dependency Audit").
+  #
+  # Runs only when a dependency file changed (`changes`' `deps` output), so a new
+  # advisory against an existing dependency doesn't turn every PR red. The daily
+  # audit-scheduled.yml run catches those on `main`. The filter is a job-level
+  # `if:`: `audit` is a required check, and a skipped job reports success. It
+  # runs unless `changes` said `deps=false`, so a failed detection still audits.
   audit:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.deps != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -119,43 +192,62 @@ jobs:
   # Integration suites skip here: no DB URLs are set, and
   # ASKDB_REQUIRE_INTEGRATION is deliberately NOT set — the `test` job below
   # owns integration coverage (on Node 22) so DB services aren't paid for twice.
+  #
+  # Docs-only PRs skip its steps, not the job. A matrix job skipped by a job-level
+  # `if:` reports one check under the unexpanded name, never the three required
+  # `unit (Node N)` checks, which then stay pending (actions/runner#952). Running
+  # the job with every step skipped reports each of them as a success.
   unit-node-matrix:
     name: unit (Node ${{ matrix.node }})
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
+    env:
+      DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
     strategy:
       fail-fast: false
       matrix:
         node: ["22", "24", "26"]
     steps:
+      - name: Docs-only pull request
+        if: env.DOCS_ONLY == 'true'
+        run: echo "Docs-only pull request; skipping the unit tests (lint runs the docs tests)."
+
       - name: Checkout
+        if: env.DOCS_ONLY != 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Setup pnpm
+        if: env.DOCS_ONLY != 'true'
         uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
 
       - name: Setup Node.js
+        if: env.DOCS_ONLY != 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
 
       - name: Node version
+        if: env.DOCS_ONLY != 'true'
         run: node --version
 
       - name: Install dependencies
+        if: env.DOCS_ONLY != 'true'
         run: pnpm install --frozen-lockfile
 
       # Each package's vitest run records its counts in ASKDB_TEST_SUMMARY_DIR
       # (scripts/test-utils/summary-reporter.mjs); the next step renders one table.
       - name: Build + unit tests
+        if: env.DOCS_ONLY != 'true'
         run: pnpm test
         env:
           ASKDB_TEST_SUMMARY_DIR: ${{ runner.temp }}/test-summary
 
       - name: Test summary
-        if: always()
+        if: always() && env.DOCS_ONLY != 'true'
         env:
           ASKDB_TEST_SUMMARY_DIR: ${{ runner.temp }}/test-summary
           TITLE: Unit tests (Node ${{ matrix.node }})
@@ -164,8 +256,11 @@ jobs:
   # ── 2. Test ───────────────────────────────────────────────────────────────
   # Runs unit + integration tests. Turbo replays build outputs from cache so
   # packages are not rebuilt. DB services start in parallel with job setup.
+  # Docs-only PRs skip it (a skipped job reports success); lint runs the docs
+  # tests there. `!= 'true'`: a failed `changes` job still runs it.
   test:
-    needs: build
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-latest
 
     services:
@@ -277,8 +372,14 @@ jobs:
   # packaging failures surface without waiting for the full DB test suite.
   # smoke:install rebuilds packages internally; turbo cache is restored as a
   # safety net for any direct `pnpm build` calls.
+  #
+  # Docs-only PRs skip it, unless they change a package's README.md: that ships
+  # in the tarball, and the smoke test checks its links.
   preflight:
-    needs: build
+    needs: changes
+    if: >-
+      ${{ !cancelled() && (needs.changes.outputs.docs_only != 'true' ||
+      needs.changes.outputs.packed_readme == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -320,6 +421,7 @@ jobs:
       - name: "@askdb/ai tests at the AI SDK peer floors"
         run: pnpm test:ai-floors
 
+      # Packs what's in each package's dist/, which `pnpm smoke:install` above built.
       - name: Validate publish (dry-run)
         run: pnpm -r publish --dry-run --no-git-checks --access=public
 
@@ -331,46 +433,10 @@ jobs:
   # passes on pass / n/a / known. The table lands in the job summary and
   # .lab/matrix.json is uploaded, pass or fail.
   #
-  # Docs-only PRs skip it. The filter is a job-level `if:` on `lab-changes`,
-  # not a workflow-level `paths:`: a skipped job reports success, so this check
-  # can be made required without blocking docs-only PRs (see changesets.yml).
-  lab-changes:
-    runs-on: ubuntu-latest
-    outputs:
-      lab: ${{ steps.changes.outputs.lab }}
-    steps:
-      - name: Checkout
-        if: github.event_name == 'pull_request'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      # Docs-only = every changed file is under apps/docs-site/ or docs/,
-      # a top-level *.md, or a README.md / CHANGELOG.md. Other Markdown is not
-      # docs-only: schema artifacts (fixtures/schemas/**, lab overlays) are .md.
-      - name: Detect docs-only pull requests
-        id: changes
-        env:
-          EVENT: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          if [ "$EVENT" != "pull_request" ]; then
-            echo "lab=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          changed="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
-          if [ -n "$changed" ] && ! printf '%s\n' "$changed" \
-            | grep -Eqv '^(apps/docs-site/|docs/)|^[^/]+\.md$|(^|/)(README|CHANGELOG)\.md$'; then
-            echo "lab=false" >> "$GITHUB_OUTPUT"
-            echo "Docs-only pull request; skipping the consumer lab."
-          else
-            echo "lab=true" >> "$GITHUB_OUTPUT"
-          fi
-
+  # Docs-only PRs skip it, by `changes`' `docs_only` output (job 0).
   consumer-lab:
-    needs: [build, lab-changes]
-    if: needs.lab-changes.outputs.lab == 'true'
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -439,8 +505,8 @@ jobs:
   # Docs-only PRs skip it, by the same filter as the consumer lab. Evidence and Playwright's
   # report are uploaded, pass or fail.
   e2e:
-    needs: [build, lab-changes]
-    if: needs.lab-changes.outputs.lab == 'true'
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -469,8 +535,38 @@ jobs:
           restore-keys: |
             turbo-${{ runner.os }}-
 
+      # Chromium is cached per Playwright version, which pins its browser build. The
+      # version comes from the installed CLI: the lockfile also holds other playwright-core
+      # versions. The system libraries aren't cached, so a hit still installs them.
+      - name: Find the Playwright version
+        id: playwright
+        run: |
+          version="$(pnpm -C e2e exec playwright --version | awk '{print $NF}')"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] || { echo "Unexpected Playwright version: '$version'" >&2; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Playwright's Chromium
+        id: playwright-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+
       - name: Install Playwright's Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: pnpm -C e2e exec playwright install --with-deps chromium
+
+      # Saved right after the install, so a failing replay doesn't throw the download away.
+      - name: Save Playwright's Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ steps.playwright-cache.outputs.cache-primary-key }}
+
+      - name: Install Chromium's system dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm -C e2e exec playwright install-deps chromium
 
       # The runner context isn't available in a job-level env, so the evidence root is set here.
       - name: Run the replays
