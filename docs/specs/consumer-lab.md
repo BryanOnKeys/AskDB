@@ -110,7 +110,10 @@ examples/consumer-lab/
     lab-cli.ts              # `pnpm lab ask …`, `pnpm lab ui`
     ask-run.ts              # ask → validate → execute on one engine, shared by `lab ask` and `lab ui`
     ui/                     # `lab ui`: the loopback server, its page, one process per engine run, and the cross-engine summary
-    matrix-reporter.ts      # vitest reporter → dialect × scenario table
+    matrix-reporter.ts      # vitest reporter → dialect × scenario table (or one shard's outcomes)
+    matrix-table.mjs        # builds and renders the table from test outcomes; merges shards' outcomes
+    matrix-merge.mjs        # `pnpm lab:matrix:merge`: shard files → the one matrix
+    matrix-shards.ts        # vitest sequencer: `--shard` by each file's CI cost, costliest files first
     scratch.ts              # writable scratch copies of the fixture, created, reset and dropped by the lab
   test/
     introspection.test.ts

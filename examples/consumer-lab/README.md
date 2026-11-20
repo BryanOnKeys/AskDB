@@ -44,6 +44,8 @@ pnpm lab ui                          # a page on 127.0.0.1 that runs one input o
 pnpm lab:test                        # the lab's own suite (needs the fixture, the lab's Postgres and an installed lab)
 pnpm lab:matrix                      # lab:up, then the suite as a scenario × dialect table
 pnpm lab:matrix -t introspect-golden # vitest flags pass through: one scenario (-t), one dialect (-t '\[mysql\]'), one file
+pnpm lab:matrix --shard=1/2          # one of two shards, by each file's cost (.lab/matrix.shard-1.json); see Sharding
+pnpm lab:matrix:merge <dir-or-files> # the shards' files → .lab/matrix.json, the table and the exit code
 pnpm lab:record                      # record the catalog's replies from a live OpenAI model (needs OPENAI_API_KEY; see Record and live)
 LAB_LIVE_MODEL=1 pnpm lab:matrix     # the suite plus a live model's answers, graded by the oracle; writes no cassette
 pnpm lab:use --restore               # put the committed baseline (npm:latest) back
@@ -369,9 +371,28 @@ Informational describes what the case proves, not how the matrix counts it: a `F
 
 Below the test rows, the `unique-constraints *` and `view-marker *` rows are **annotations, not test results**: facts the golden schema holds but the schema artifact can't express (the "Not comparable" rule in [`NORMALIZATION.md`](../../fixtures/multi-engine/dataset/NORMALIZATION.md)). The reporter prints them as `n/a (not in the schema artifact)` from a static list, and `matrix.json` keeps them under `annotations`.
 
+`matrix.json`'s `files` holds the seconds each test file took, which [sharding](#sharding) weighs files by.
+
+### Sharding
+
+`pnpm lab:matrix --shard=<i>/<n>` runs one of `n` shards of the suite, and `pnpm lab:matrix:merge` combines the shards into the matrix one unsharded run gives. Each shard runs `lab:up` and needs its own fixture, so shards run on separate machines (or one after another on one machine); the lab's tests share the fixture's databases and can't run two shards against one fixture at once.
+
+```bash
+pnpm lab:use .                          # on each shard's machine
+pnpm lab:matrix --shard=1/2             # writes .lab/matrix.shard-1.json; another machine runs --shard=2/2
+pnpm lab:matrix:merge shards/           # every matrix.shard-<i>.json under shards/ → .lab/matrix.json
+```
+
+- **Which files a shard runs:** `--shard` is vitest's own flag, passed through, but the lab's sequencer ([`src/matrix-shards.ts`](src/matrix-shards.ts)) deals the files out instead of vitest, whose split gives each shard the same number of files whatever they cost. Each file weighs the seconds it took in CI (`FILE_SECONDS`); the files are dealt heaviest first, each to the shard with the least weight so far, so the shards' times come out within one file of each other. A file the table doesn't list weighs 10 seconds: add it, and refresh the rest from a `main` run's `matrix.json` (`files`) when they drift. Every run, sharded or not, starts its heaviest files first.
+- **What a shard writes:** its own cells, printed under `Consumer lab matrix, shard <i>/<n>`, and every test's outcome in `.lab/matrix.shard-<i>.json`. It writes no `matrix.json` and no job summary, which would hold only some of the suite. It exits 1 on a `FAIL` cell, since no other shard can clear one, and on any failure vitest reports.
+- **What the merge does:** `node examples/consumer-lab/src/matrix-merge.mjs [<shard file or directory>…]`, which needs no install. It reads the files given and every `matrix.shard-<i>.json` under a directory given (default: `.lab/`), then builds the cells from every shard's test outcomes with the reporter's own code ([`src/matrix-table.mjs`](src/matrix-table.mjs)), so a cell whose tests ran in two shards is combined as one run would combine it. It prints the same table, writes the same `.lab/matrix.json` and appends the same job summary when `$GITHUB_STEP_SUMMARY` is set.
+- **Its exit code:** 1 on a `FAIL` cell, or when vitest failed or interrupted a shard's run (a failing test outside the matrix, a file that didn't load, an unhandled error), the cases where an unsharded `lab:matrix` exits non-zero; else 0. It exits 2 and writes no matrix unless the files are exactly shards 1 to `n` of one run: a shard that crashed or timed out before writing its file, or whose file wasn't passed, fails the merge rather than leaving its cells out. So do shards of different install targets or shard counts, and a test file in two shards.
+
 ### In CI
 
 The `consumer-lab` job in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs on every pull request and every push to `main`. It runs `pnpm lab:use .` (tarballs packed from the commit under test), then `pnpm lab:matrix`, with a 25-minute timeout. `lab:matrix` runs `lab:up`, so the job also starts the lab's Postgres for `tenant-rls` (a few seconds, on the `postgres:17` image the fixture already pulled), and the test seeds it. The table goes to the job summary, followed by a collapsible block per failing test with the reason it failed (the assertion message, or the rule that made a passing test a failure) and any unhandled errors; the full stack traces are in the step log. `.lab/matrix.json` holds the same reasons (a `FAIL` cell's `failures`), and is uploaded as the `consumer-lab-matrix` artifact whether the job passes or fails. The job fails exactly when `lab:matrix` exits non-zero. Docs-only pull requests skip it: those whose every changed file is under `apps/docs-site/` or `docs/`, a top-level `*.md`, or a `README.md` or `CHANGELOG.md`. Other Markdown still runs the lab, because schema artifacts are Markdown too.
+
+To split the job between runners, each runner runs `pnpm lab:use .`, then `pnpm lab:matrix --shard=<i>/<n>` on its own fixture, and uploads `examples/consumer-lab/.lab/matrix.shard-<i>.json` whether it passes or fails (with `include-hidden-files`, as above). A merge job that runs after every shard, whatever their results, downloads those files and runs `pnpm lab:matrix:merge <dir>`, which writes the job summary and `.lab/matrix.json`, the file to upload as `consumer-lab-matrix`; its exit code is the lab's verdict ([Sharding](#sharding)). The safety effect proofs (`pnpm lab:safety:isolated`) start their own fixture copy, so they run after the matrix on any one shard's runner.
 
 ### Published packages
 
