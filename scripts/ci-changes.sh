@@ -5,8 +5,10 @@
 #   docs_only=true|false      every changed file is docs (rule below). Always false on a push.
 #   deps=true|false           a dependency file changed: any package.json or pnpm-lock.yaml,
 #                             pnpm-workspace.yaml, .audit-ci.json or .npmrc.
-#   packed_readme=true|false  a package's README.md changed. It ships in the package's
-#                             tarball, and `pnpm smoke:install` checks its links.
+#   smoke_input=true|false    a docs file `pnpm smoke:install` reads changed: a package's
+#                             README.md (it ships in the tarball, and the smoke test checks
+#                             its links) or the Quickstart page (quickstart-example.sh runs
+#                             its steps and compares its step 6 table).
 #
 # Docs-only = every changed file is under apps/docs-site/ or docs/, a top-level *.md, or a
 # README.md / CHANGELOG.md. Other Markdown is not docs-only: schema artifacts
@@ -19,28 +21,28 @@
 #
 # When it can't tell what changed (no base, an all-zero <before> from a new branch, a force
 # push, a commit missing from the clone, a git error, an empty diff), it prints the
-# run-everything answer: docs_only=false, deps=true, packed_readme=true. ci.yml's conditions
+# run-everything answer: docs_only=false, deps=true, smoke_input=true. ci.yml's conditions
 # also run a job when an output is missing. Self-test: scripts/ci-changes.test.sh.
 set -u
 
 DOCS_RE='^(apps/docs-site/|docs/)|^[^/]+\.md$|(^|/)(README|CHANGELOG)\.md$'
 DEPS_RE='(^|/)(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc)$|^\.audit-ci\.json$'
-PACKED_README_RE='^(packages|apps)/[^/]+/README\.md$'
+SMOKE_INPUT_RE='^(packages|apps)/[^/]+/README\.md$|^apps/docs-site/src/content/docs/quickstart\.mdx$'
 
 everything() {
   echo "docs_only=false"
   echo "deps=true"
-  echo "packed_readme=true"
+  echo "smoke_input=true"
 }
 
 classify() {
-  local path any=false docs_only=true deps=false packed_readme=false
+  local path any=false docs_only=true deps=false smoke_input=false
   while IFS= read -r path || [ -n "${path}" ]; do
     [ -n "${path}" ] || continue
     any=true
     [[ "${path}" =~ ${DOCS_RE} ]] || docs_only=false
     [[ "${path}" =~ ${DEPS_RE} ]] && deps=true
-    [[ "${path}" =~ ${PACKED_README_RE} ]] && packed_readme=true
+    [[ "${path}" =~ ${SMOKE_INPUT_RE} ]] && smoke_input=true
   done
   if [ "${any}" = false ]; then
     echo "ci-changes: no changed files; running everything" >&2
@@ -49,13 +51,15 @@ classify() {
   fi
   echo "docs_only=${docs_only}"
   echo "deps=${deps}"
-  echo "packed_readme=${packed_readme}"
+  echo "smoke_input=${smoke_input}"
 }
 
-# Prints the classification of `git diff --name-only "$@"`, or everything() if git fails.
+# Prints the classification of `git diff --name-only --no-renames "$@"`, or everything() if git
+# fails. `--no-renames` lists a moved file's old path too, so moving a tested file into docs/
+# isn't read as a docs-only change.
 classify_diff() {
   local changed
-  if ! changed="$(git diff --name-only "$@")"; then
+  if ! changed="$(git diff --name-only --no-renames "$@")"; then
     echo "ci-changes: git diff $* failed; running everything" >&2
     everything
     return
