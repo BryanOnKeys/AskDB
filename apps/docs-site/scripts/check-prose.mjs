@@ -78,7 +78,9 @@ export function sentences(mdx) {
     // end a sentence: what follows it is the same thought.
     const spans = [];
     const masked = text.replace(/`[^`]*`/g, (span) => `\u0000${spans.push(span) - 1}\u0000`);
+    // oxlint-disable-next-line no-control-regex -- \u0000 marks a masked code span.
     for (const sentence of masked.split(/(?<=[.!?]["”)]?)\s+(?=[A-Z\u0000"“(])/)) {
+      // oxlint-disable-next-line no-control-regex -- \u0000 marks a masked code span.
       const trimmed = sentence.replace(/\u0000(\d+)\u0000/g, (_, index) => spans[Number(index)]).trim();
       if (trimmed) found.push({ line: block.line, text: trimmed });
     }

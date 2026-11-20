@@ -425,7 +425,6 @@ function buildForeignKeys(
   modelsByName: Map<string, PrismaModel>,
   physicalNameByField: Map<string, string>,
 ): SqlForeignKey[] {
-  const localSchema = model.schema ?? DEFAULT_SCHEMA;
   const localTable = dbName(model);
   const out: SqlForeignKey[] = [];
 
