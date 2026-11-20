@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { extname, relative, join, resolve, dirname, sep } from "node:path";
+import { extname, relative, join, resolve, sep } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { generateText as defaultGenerateText } from "ai";
@@ -87,7 +87,6 @@ import {
 } from "@askdb/enrich";
 import type {
   AskResponse,
-  ExecuteInstallDriverRequest,
   ExecuteInstallDriverResponse,
   ExecuteResponse,
   ExecuteStatusResponse,
@@ -1508,7 +1507,7 @@ function serializeRagResult(result: QueryResult): StudioRagChunkDto {
 function createStudioMockEmbedder(dim: number): Embedder {
   return async (texts: string[]) => {
     return texts.map((text) => {
-      const vector = new Array<number>(dim).fill(0);
+      const vector = Array.from({ length: dim }, () => 0);
       const tokens = text.toLowerCase().match(/[a-z0-9_]+/g) ?? [];
       for (const token of tokens) {
         vector[stableTokenHash(token) % dim] += 1;

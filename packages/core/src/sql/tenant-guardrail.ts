@@ -803,6 +803,7 @@ function inOrderOrGroupBy(text: string, start: number, end: number): boolean {
   if (word === "order" || word === "group") return /^\s+by(?![\w$\u0080-\uffff])/i.test(text.slice(end));
   if (word !== "by") return false;
   const before = /(?:order|group)\s+$/i.exec(text.slice(0, start));
+  // oxlint-disable-next-line no-control-regex -- \u0001 is QUOTE_MARK, the placeholder for a quoted identifier's delimiters.
   if (before === null || /[\w$\u0080-\uffff\u0001]/.test(text[before.index - 1] ?? "")) return false;
   return !afterDot(before.index);
 }
@@ -1888,7 +1889,7 @@ function boundIn(p: Proof, scope: string): (node: Node, column: string) => Reado
   const cached = p.bound.get(scope);
   if (cached !== undefined) return cached;
   const { a } = p;
-  const { tokens, scopes } = a;
+  const { tokens } = a;
   const parent = new Map<string, string>();
   const find = (x: string): string => {
     let r = x;
@@ -1964,7 +1965,6 @@ type InLink = { readonly ref: ColumnRef; readonly innerScope: string; readonly i
  * (either way round), or `node.fromColumn IN (SELECT y.toColumn …)`, where `y` reads the hop's table.
  */
 function hopTargets(p: Proof, node: Node, hop: PolicyGraph["hops"][number]): Node[] {
-  const { tokens, scopes } = p.a;
   const targets: Node[] = [];
   for (const eq of p.equalities) {
     if (eq.scope !== node.scope) continue;

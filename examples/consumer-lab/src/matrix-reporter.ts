@@ -38,6 +38,7 @@ const MISS = "miss";
 
 const MAX_REASON_LINES = 30;
 const MAX_REASON_CHARS = 3000;
+// oxlint-disable-next-line no-control-regex -- ESC starts an ANSI color code.
 const ANSI = /\u001b\[[0-9;]*m/g;
 
 /** An error's name, message and diff, without colors, cut to a readable length. */

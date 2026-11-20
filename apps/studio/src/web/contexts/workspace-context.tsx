@@ -286,7 +286,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const updateColumnDraft = useCallback((tableId: string, columnId: string, updater: (d: ColumnDraft) => ColumnDraft) => {
     updateTableDraft(tableId, (draft) => {
       const columns = { ...draft.columns };
-      columns[columnId] = updater({ ...(columns[columnId] ?? {}) });
+      columns[columnId] = updater({ ...columns[columnId] });
       return { ...draft, columns };
     });
   }, [updateTableDraft]);

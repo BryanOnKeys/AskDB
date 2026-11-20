@@ -193,6 +193,7 @@ function describeError(error: unknown): string {
   return `${e.name ?? "Error"}${e.reason ? ` (${e.reason})` : ""}: ${e.message ?? String(error)}`;
 }
 
+// oxlint-disable-next-line no-control-regex -- this pattern finds control characters in a generated value.
 const CONTROL_CHAR = /[\u0000-\u001f\u007f]/;
 const INLINABLE = /^[\x20-\x5b\x5d-\x7e]*$/;
 /** An integer from the environment, or the fallback. A value that isn't one throws: a blank or `20k` would run zero cases and pass. */

@@ -1,4 +1,5 @@
 import type { V2SchemaJson } from "@askdb/core";
+// oxlint-disable-next-line no-unused-vars -- EmptyIntrospectionError is imported for a JSDoc {@link}.
 import type { EmptyIntrospectionError } from "../errors.js";
 import type { IntrospectionFilters, IntrospectionWarning } from "../types.js";
 

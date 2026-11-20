@@ -248,6 +248,7 @@ function anySpan(
 // Dialect-aware literal escaping
 // ---------------------------------------------------------------------------
 
+// oxlint-disable-next-line no-control-regex -- this pattern finds control characters in a bound value.
 const CONTROL_CHAR_RE = /[\u0000-\u001f\u007f]/;
 
 /**

@@ -1,7 +1,7 @@
 /**
- * bindPreparedQuery() as an enforcement point (ADR 0010, "Enforcing reuse: re-check at
- * rebind"): it re-runs the guardrails on the stored template under the bind-time schema,
- * scope and modes, and renders tenant IDs from the bind-time scope.
+ * bindPreparedQuery() as an enforcement point (ADR 0010): it re-runs the guardrails on the
+ * stored template under the bind-time schema, scope and modes, and renders tenant IDs from
+ * the bind-time scope.
  */
 import type { LanguageModel } from "ai";
 import { dirname, join } from "node:path";

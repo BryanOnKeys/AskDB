@@ -23,7 +23,7 @@ import { findTenantPlaceholderAnyCase, unexpandedSubtreeError, type TenantSqlOut
 import { validateTenantScope } from "./tenant-scope-validate.js";
 
 /**
- * The checked rebind (ADR 0010, "Enforcing reuse: re-check at rebind"). It sits above the
+ * The checked rebind (ADR 0010). It sits above the
  * shared renderer (`checked-statement.ts`), the mechanical renderer (`bind.ts`), tenant
  * substitution (`tenant-placeholders.ts`) and the guardrail checks, which import none of
  * this module.

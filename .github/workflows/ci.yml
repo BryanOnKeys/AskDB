@@ -107,10 +107,11 @@ jobs:
         run: pnpm build
 
   # ── 1b. Lint ──────────────────────────────────────────────────────────────
-  # Every package's `lint` task: `tsc --noEmit` for the libraries/apps, plus
-  # Studio's eslint + `tsconfig.web.json` typecheck and the docs site's
-  # `astro check`. None of these run anywhere else in CI. `lint` depends on
-  # `^build`, so turbo builds (or replays from its cache) what each package imports.
+  # oxlint over the whole repo (root `.oxlintrc.json`, warnings fail), then every
+  # package's `lint` task: `tsc --noEmit` for the libraries/apps, plus Studio's
+  # `tsconfig.web.json` typecheck and the docs site's `astro check`. None of
+  # these run anywhere else in CI. `lint` depends on `^build`, so turbo builds
+  # (or replays from its cache) what each package imports.
   #
   # On docs-only PRs, where `test` doesn't run, it also runs the tests that read
   # docs: the docs site's own suite (its build, links and prose checks) and the
