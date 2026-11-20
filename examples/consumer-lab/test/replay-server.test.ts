@@ -10,7 +10,7 @@
  * Catches: a reply shape the AI SDK can't parse (on the path `lab ask` doesn't take), a
  * replay miss answered with some default instead of an error, routing on the wrong
  * dialect, and prompts that go unrecorded.
- * Not covered elsewhere: `lab-ask-replay.test.ts` drives only the Responses API, and only
+ * Not covered elsewhere: `lab-ask-replay-*.test.ts` drive only the Responses API, and only
  * questions that have cassettes.
  * No production seam: the server is lab code; the client is the public AI SDK. AskDB isn't
  * involved, so the test uses its own catalog and cassettes in a temp directory.
