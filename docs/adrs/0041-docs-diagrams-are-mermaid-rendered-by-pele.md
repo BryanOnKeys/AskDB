@@ -1,43 +1,52 @@
-# ADR 0041 — Docs-site diagrams are Mermaid, rendered to inline SVG at build time by pele
+# ADR 0041: Docs diagrams with no actors are Mermaid, rendered by pele
 
-## Status
-
-Accepted (2026-11-07, the maintainer's Round 16, Q41 → A). Supersedes [ADR 0034](0034-docs-diagrams-are-d2-rendered-at-build-time.md). Amended 2026-11-07: the pin moves to pele 1.10.0. Amended 2026-11-11: the pin moves to pele 1.13.0 (see Decision). Amended 2026-11-14 by [ADR 0050](0050-docs-pages-are-markdown-first-with-a-markdown-twin.md): the `--pele-*` mapping is in `src/styles/content.css` and the font stacks in `src/styles/tokens.css`, where this ADR says `custom.css`. Amended 2026-11-15 by [ADR 0051](0051-docs-diagrams-are-askdbs-own.md): flows and sequences are AskDB's own `diagram` fences, and this ADR now covers only the diagrams with no actors (an entity-relationship diagram, a dependency graph).
-
-## Context
-
-ADR 0034 made docs-site diagrams D2 source, rendered at build time by `astro-d2` with D2's WebAssembly build. That kept CI and the Pages deploy free of a binary or a browser, and kept diagram JavaScript off the pages, but the route cost more than it saved:
-
-- **Sizing by hand.** `astro-d2` ignores a fence's `width` with the WebAssembly build ([astro-d2#69](https://github.com/HiDeoo/astro-d2/issues/69)), so each page set `--d2-width` on its `<figure>` to a number copied from the built SVG.
-- **A stand-in stylesheet.** D2's embedded `<style>` never reached the page ([astro#18652](https://github.com/withastro/astro/issues/18652)), so `custom.css` mapped 36 of D2's palette classes to Starlight's colors and stood in for the rest of D2's rules.
-- **An experimental build.** `useD2js` is experimental upstream, `astro-d2` is 0.x, and `@d2lang/d2` added about 91 MB to the docs site's dev install.
-- **A less familiar syntax.** D2 is less widely known than Mermaid, which GitHub renders in issues, pull requests and Markdown files.
-
-[pele](https://pele.run) (Obsidian, MIT) renders Mermaid 12.1's syntax to SVG with its own layout. Its `render()` is synchronous, runs in Node with no dependencies, writes no `<style>` element, and takes its colors from CSS variables on the SVG.
-
-## Options considered
-
-- **A. Mermaid, rendered at build time by pele through a remark plugin (chosen).** One npm package with no dependencies and no install script. The SVG carries its natural width and themes through `--pele-*` variables, so pages need no width and `custom.css` maps ten variables, not a palette.
-- **B. Keep D2 (ADR 0034).** Rejected: the costs above.
-- **C. `rehype-mermaid` or `mmdc`, which run Mermaid in a browser.** Rejected for ADR 0034's reasons: every CI job run would install Chromium, or Puppeteer's install script, which `allowBuilds` blocks.
-- **D. Mermaid or pele's `mount()` in the browser.** Rejected: both ship JavaScript to readers for static pictures. pele's browser bundle is about 700 KB, smaller than Mermaid's, but still a script for a picture that doesn't change.
-- **E. `beautiful-mermaid`.** Rejected, as in ADR 0034: every SVG imports Google Fonts.
+**Status:** accepted · 2026-11-07
 
 ## Decision
 
-- A docs-site diagram is Mermaid, in a ```` ```mermaid ```` fence in its page. `apps/docs-site/plugins/remark-mermaid.mjs` renders it at build time with pele's `render()`, as inline SVG. Pages ship no diagram JavaScript.
-- There is no computed style at build time, so the plugin passes the site's font stacks (`--sl-font` and `--sl-font-mono` in `custom.css`) as `fontFamily` and `fontFamilyMono`. A test keeps the two equal.
-- A diagram pele can't render fails the build, with the page, the line and `PeleError`'s code (`syntax`, `semantic`, `unsupported-diagram` or `limit`). Nothing ships broken.
-- `custom.css` maps pele's `--pele-*` variables to Starlight's color tokens, which switch on the theme toggle (`:root[data-theme="dark"]`), so a diagram follows the toggle without a second render. Authors don't color a diagram in its source.
-- pele is pinned to an exact version, at least two weeks old when chosen. The first pin was 1.9.0 (published 2026-10-22). Since 2026-11-07 it is 1.10.0 (published 2026-10-24), whose `PeleError.line` counts lines in the source as written, comments, directives and front matter included ([obsidianmd/pele#61](https://github.com/obsidianmd/pele/issues/61)). So the plugin reports pele's own line, and no longer looks for the quoted line to correct it. Since 2026-11-14 it is 1.13.0 (published 2026-10-31, merged once it was 14 days old), which reports an error at the end of a diagram on the diagram's last line, not one line past it on the closing fence. A bump is a deliberate change: rebuild the site and check each diagram in both themes, at desktop width and at 390 px.
-- `apps/docs-site/STYLE.md` ("Diagrams") holds the authoring rules. The hand-drawn SVGs stay until their pages change, and are then redrawn in Mermaid.
+A docs-site diagram with no actors is Mermaid source in a `mermaid` fence in its page. Today that is an entity-relationship diagram and a dependency graph. `apps/docs-site/plugins/remark-mermaid.mjs` renders each fence at build time with [pele](https://pele.run), as inline SVG. Pages ship no diagram JavaScript.
 
-## Consequences
+This ADR supersedes ADR 0034, which rendered D2 at build time. ADR 0051 owns flows and sequences. ADR 0050 owns the design tokens that color the SVG.
 
-- pele lays diagrams out its own way, so Mermaid's live editor doesn't show what readers see. Authors check the built page.
-- At build time pele sizes labels from its built-in width table (Helvetica and Arial metrics), while the page shows them in the site's font stack, so a wider font leaves a label less margin. In the six diagrams this ADR shipped with, every label fits in the system font (SF Pro) at 1280 px and 390 px. A diagram whose labels overflow needs a shorter label or a `<br/>`.
-- The diagram's source sits in its page, so an edit to a diagram and to its caption land in one file. Maintainer notes go on `%%` comment lines, which don't reach the page.
-- pele is 1.x and releases often (1.4 to 1.13 in October 2026). The exact pin means a new release changes nothing until someone bumps it.
-- pele adds 3.5 MB to the docs site's dev install, and `astro-d2`, `@d2lang/d2` and `satteri` leave. Nothing but the SVGs reaches readers.
-- The Astro 7.4.7 floor and the `@emnapi/runtime` 1.x pin from ADR 0034 stay. The floor no longer has a D2 reason but needs no lowering, and the pin keeps `astro check` loading with Astro's bundler, not with D2.
-- The SVG has no accessible name of its own: the `<figcaption>` is the diagram's text alternative, as it was with D2.
+pele is pinned to an exact version. A diagram pele cannot render fails the build.
+
+## Why
+
+- D2 cost more than it saved. Each page set its diagram's width by hand, and a stand-in stylesheet mapped 36 palette classes. Its build was experimental and added about 91 MB to the install.
+- pele runs in Node with no dependencies and no install script. CI needs no binary and no browser.
+- pele writes no `<style>` element and reads its colors from CSS variables. One render follows the theme toggle.
+- Mermaid syntax is more widely known than D2, and GitHub renders it.
+
+```mermaid
+flowchart LR
+  fence["mermaid fence<br/>in a page"] --> plugin["remark plugin<br/>(build time)"]
+  plugin -->|pele render| svg[Inline SVG in the page]
+  plugin -->|cannot render| fail[Build fails]
+  tokens["Design tokens<br/>(ADR 0050)"] -->|pele color variables| svg
+```
+
+## Options
+
+| | Option | Why it lost |
+|---|---|---|
+| A | Mermaid, rendered at build time by pele through a remark plugin | **Chosen.** |
+| B | Keep D2 (ADR 0034) | Hand sizing, a stand-in stylesheet, an experimental build and a 91 MB install cost more than D2 saved. |
+| C | `rehype-mermaid` or `mmdc`, which run Mermaid in a browser | Every CI job would install Chromium, or run an install script that `allowBuilds` blocks. |
+| D | Mermaid or pele's `mount()` in the reader's browser | It ships a script of about 700 KB or more for a picture that does not change. |
+| E | `beautiful-mermaid` | Every SVG it writes imports Google Fonts. |
+
+## Keep
+
+| Rule | Checked by |
+|---|---|
+| Each `mermaid` fence becomes inline SVG at build time. Pages ship no diagram JavaScript. | `apps/docs-site/plugins/remark-mermaid.test.mjs` |
+| A diagram pele cannot render fails the build, with the page, the line and pele's error code. | `apps/docs-site/plugins/remark-mermaid.test.mjs` |
+| The plugin's font stacks equal `--sl-font` and `--sl-font-mono` in `src/styles/tokens.css`. | `apps/docs-site/plugins/remark-mermaid.test.mjs` |
+| No diagram tool needs a binary or a browser in CI, runs an install script, or loads a font from another host. | review |
+| pele stays pinned to an exact version that was at least two weeks old when chosen. | review |
+| A pele bump rebuilds the site and checks each diagram in both themes, at desktop width and at 390 px. | review |
+| Authors set no color in a diagram's source. The pele color variables map to the design tokens, so a diagram follows the theme toggle. | review |
+| The `<figcaption>` is the diagram's text alternative: the SVG has no accessible name of its own. | review |
+| The docs site keeps `@emnapi/runtime` at 1.x, so `astro check` loads with Astro's bundler. | review |
+
+`apps/docs-site/STYLE.md` ("Diagrams") holds the rules for authors.

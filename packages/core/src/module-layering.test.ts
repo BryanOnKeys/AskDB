@@ -1,5 +1,5 @@
 /**
- * Module layering (ADR 0010, "Module layering"): `@askdb/core` has no runtime import
+ * Module layering (ADR 0010): `@askdb/core` has no runtime import
  * cycles, and the mechanical renderer `sql/bind.ts` stays below tenant substitution, the
  * guardrails and the shared renderer `sql/checked-statement.ts`, which the checked binder
  * `sql/rebind.ts` sits above. Type-only imports and re-exports are erased at build time and

@@ -14,7 +14,7 @@ import {
 } from "../errors.js";
 
 /**
- * The decision point (ADR 0010, decision 2): the only code that knows what `strict`,
+ * The decision point (ADR 0010): the only code that knows what `strict`,
  * `warn` and `off` mean for findings about the SQL, at each enforcement point. (The
  * tenant policy loader also reads `enforcement`, to decide whether a policy that doesn't
  * match schema.json loads; ADR 0023.) A leaf module: the checks and the enforcement

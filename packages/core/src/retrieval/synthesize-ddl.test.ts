@@ -200,7 +200,7 @@ describe("synthesizeRetrievedDdl — business context, column notes and headings
     expect(ddl).not.toContain("business context");
   });
 
-  it("lists each shown column's note from the schema, not from a retrieved column chunk (ADR 0042, amended)", () => {
+  it("lists each shown column's note from the schema, not from a retrieved column chunk (ADR 0042)", () => {
     const schema = loadSchema(ordersDir);
     const orders = schema.tables.find((t) => t.name === "orders")!;
     orders.columns.find((c) => c.name === "status")!.note = "refunds flip a paid order back to pending";
