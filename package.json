@@ -15,7 +15,7 @@
     "test:watch": "vitest",
     "e2e": "pnpm exec turbo run e2e --filter=@askdb/e2e",
     "lint": "pnpm lint:oxlint && pnpm exec turbo run lint",
-    "lint:oxlint": "oxlint --deny-warnings",
+    "lint:oxlint": "oxlint --deny-warnings && node --test scripts/oxlint/askdb-comments.test.mjs",
     "docs:build": "pnpm -C apps/docs-site build",
     "docs:preview": "pnpm -C apps/docs-site preview",
     "docs:dev": "pnpm -C apps/docs-site dev",
