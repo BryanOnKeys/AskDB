@@ -74,6 +74,7 @@ const MAX_REASON_LINES = 30;
 const MAX_REASON_CHARS = 3000;
 /** Failures written to the step summary; the rest are in the step log and `matrix.json`. */
 const MAX_SUMMARY_FAILURES = 25;
+// oxlint-disable-next-line no-control-regex -- ESC starts an ANSI color code.
 const ANSI = /\u001b\[[0-9;]*m/g;
 
 /** An error's name, message and diff, without colors, cut to a readable length. */

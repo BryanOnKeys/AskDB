@@ -73,3 +73,4 @@ Numbering skips 0020.
 | [0050](0050-docs-pages-are-markdown-first-with-a-markdown-twin.md) Docs pages are Markdown first, and each has a Markdown twin | Accepted | No layout HTML in a page. No color or font outside `tokens.css`. No font from another host. |
 | [0051](0051-docs-diagrams-are-askdbs-own.md) Docs flows and sequences are drawn from a `diagram` fence | Accepted | No coordinate or color in a diagram. No diagram JavaScript. A diagram that can't be drawn fails the build. |
 | [0052](0052-scripted-replays-live-in-a-private-e2e-package.md) Scripted replays live in a private `e2e` package | Accepted | Replays use the fake model and role-and-name locators. Journeys stay in one package. The task stays uncached. |
+| [0053](0053-oxlint-lints-the-whole-repo.md) oxlint lints the whole repo, and a warning fails the build | Accepted | Run oxlint with warnings denied in pnpm lint and CI. One root config. Fix or allow warnings line by line. Pin oxlint exactly. |

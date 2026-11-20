@@ -317,6 +317,7 @@ function toSafeFilenameSlug(identifier: string): string {
   // Node writes a lone UTF-16 surrogate in a path as U+FFFD, so `a\ud800` and
   // `a\ud801` would name the same file.
   let slug = identifier.replace(/\p{Surrogate}/gu, "_");
+  // oxlint-disable-next-line no-control-regex -- control characters are not allowed in a file name.
   slug = slug.replace(/[\u0000-\u001f\u007f/\\<>:"|?*]/g, "_");
   slug = slug.replace(/[. ]+$/, (m) => "_".repeat(m.length));
   if (slug === "") return "_";

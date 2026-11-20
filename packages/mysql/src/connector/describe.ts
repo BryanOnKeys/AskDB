@@ -8,9 +8,7 @@ import type {
   SqlIndex,
   SqlNamespace,
   SqlSchema,
-  SqlTable,
   SqlUnique,
-  SqlView,
 } from "@askdb/introspect";
 import { AskDbError, SINGLE_NAMESPACE_LABEL } from "@askdb/core";
 import {

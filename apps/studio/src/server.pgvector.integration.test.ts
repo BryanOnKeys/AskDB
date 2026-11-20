@@ -197,7 +197,7 @@ async function embeddingModel(width: number) {
 }
 
 function lexicalVector(text: string, width: number): number[] {
-  const vector = new Array<number>(width).fill(0);
+  const vector = Array.from({ length: width }, () => 0);
   for (const token of text.toLowerCase().match(/[a-z0-9_]+/g) ?? []) vector[token.length % width]! += 1;
   const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0)) || 1;
   return vector.map((value) => value / norm);

@@ -273,6 +273,7 @@ const NAME_CHAR = /[A-Za-z0-9_$\u0080-￿]/;
 export function startsDashComment(sql: string, i: number, needsSpace: boolean): boolean {
   if (sql[i] !== "-" || sql[i + 1] !== "-") return false;
   const after = sql[i + 2];
+  // oxlint-disable-next-line no-control-regex -- a control character ends a `--` comment marker.
   return !needsSpace || after === undefined || /[\s\x00-\x1f]/.test(after);
 }
 

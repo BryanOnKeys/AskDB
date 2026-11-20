@@ -52,7 +52,7 @@ import { createAskDb } from "@askdb/client";
 import { getAskDbRuntimeConfig } from "@askdb/config";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
+import { afterAll, beforeAll, describe, it, type TestContext } from "vitest";
 import { askWithModel, liveModel, settle, useLiveConfig, type AskResult } from "../src/ask.js";
 import { ensureArtifact } from "../src/artifacts.js";
 import { needsCapability } from "../src/capabilities.js";
