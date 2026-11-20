@@ -1,5 +1,5 @@
 /**
- * The enforcement step (ADR 0010, decisions 2–4): each enforcement point hands
+ * The enforcement step (ADR 0010): each enforcement point hands
  * `enforceGuardrails()` its forms and context, and the step picks the checks and the point
  * from `path`, decides, logs and throws. The public functions' own tests cover each point
  * in depth; this table pins what the step owns across points: the point per path, the check

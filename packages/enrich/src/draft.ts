@@ -103,7 +103,9 @@ export function buildFrontmatter(
     name: physical.name,
     schemaId,
   };
-  if (draft.primaryEntity) fm.primaryEntity = draft.primaryEntity;
+  // Studio keeps the field as typed (spaces and all) and trims here, when the draft is written.
+  const primaryEntity = draft.primaryEntity?.trim();
+  if (primaryEntity) fm.primaryEntity = primaryEntity;
   if (nonEmptyStrings(draft.aliases)) fm.aliases = draft.aliases;
   if (nonEmptyStrings(draft.tags)) fm.tags = draft.tags;
   if (draft.sensitive !== undefined) fm.sensitive = draft.sensitive;

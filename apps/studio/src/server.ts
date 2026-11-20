@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { extname, relative, join, resolve, dirname, sep } from "node:path";
+import { extname, relative, join, resolve, sep } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { generateText as defaultGenerateText } from "ai";
@@ -41,6 +41,7 @@ import {
   type AskGenerateDeps,
   type BuiltInDialectId,
   type DialectSpec,
+  type EnrichmentTarget,
   type NormalizedSchemaV2,
   type TenantPolicyFrontmatter,
   type TenantScope,
@@ -81,13 +82,13 @@ import {
   saveConcepts,
   saveTable,
   saveTenantPolicy,
+  SuggestSourceNotFoundError,
   type SuggestSource,
   type TableDraft,
   type Workspace,
 } from "@askdb/enrich";
 import type {
   AskResponse,
-  ExecuteInstallDriverRequest,
   ExecuteInstallDriverResponse,
   ExecuteResponse,
   ExecuteStatusResponse,
@@ -106,6 +107,7 @@ import type {
   SuggestResponse,
   SuggestTenantPolicyResponse,
 } from "./shared/api.js";
+import { STUDIO_CHUNK_TYPES } from "./shared/rag.js";
 import {
   EXECUTE_DRIVER_REGISTRY,
   executeDialectFor,
@@ -549,8 +551,8 @@ async function handleSetupIntrospect(state: StudioState): Promise<IntrospectRunR
   if (probe.loadError || !probe.outputDir) {
     throw new StudioHttpError(
       409,
-      `askdb.config.ts exists but could not be loaded: ${probe.loadError ?? "unknown error"}. ` +
-        "Install the project dependencies shown in setup step 1, then retry.",
+      `askdb.config.ts exists but could not be loaded: ${probe.loadError || "no error message"}. ` +
+        "Fix what the error names (often a missing package or .env variable), then retry; restart Studio if it persists.",
     );
   }
   const outDir = probe.outputDir;
@@ -720,6 +722,25 @@ function saveDraft(state: StudioState, tableId: string, draft: TableDraft): void
 }
 
 async function suggestForSource(state: StudioState, source: SuggestSource): Promise<SuggestResponse["candidates"]> {
+  // `loadSchema()` carries effective sensitivity (front-matter escalations included), and the
+  // prompt follows `modes.omitSensitiveFromPrompt` as `ask()` does (#625, ADR 0026).
+  requireWorkspace(state);
+  const schema = loadSchema(state.schemaDir);
+
+  // Reject unknown tables and columns before resolving AI config or creating the model.
+  // Table/column lookup rules live in `@askdb/enrich` (`buildSuggestionTarget` / `findTable`);
+  // Studio maps their typed not-found errors to HTTP 404 here, so no model is created for an
+  // invalid reference. The resolved target is reused below instead of re-looked-up.
+  let target: EnrichmentTarget;
+  try {
+    target = buildSuggestionTarget(schema, source);
+  } catch (error) {
+    if (error instanceof SuggestSourceNotFoundError) {
+      throw new StudioHttpError(404, error.message);
+    }
+    throw error;
+  }
+
   const rt = getAskDbRuntimeConfig();
   const aiConfig = ai.resolveAiConfigFromSection(rt.ai.language);
   if (!aiConfig) {
@@ -730,14 +751,10 @@ async function suggestForSource(state: StudioState, source: SuggestSource): Prom
   const providerOptions = reasoningEffort
     ? ai.resolveProviderOptions(aiConfig, { reasoningEffort })
     : undefined;
-  // `loadSchema()` carries effective sensitivity (front-matter escalations included), and the
-  // prompt follows `modes.omitSensitiveFromPrompt` as `ask()` does (#625, ADR 0026).
-  requireWorkspace(state);
-  const schema = loadSchema(state.schemaDir);
   let candidates: Awaited<ReturnType<typeof suggestEnrichment>>;
   try {
     candidates = await suggestEnrichment(
-      buildSuggestionTarget(schema, source),
+      target,
       buildSuggestionContext(schema, source.tableId),
       model,
       {
@@ -1507,7 +1524,7 @@ function serializeRagResult(result: QueryResult): StudioRagChunkDto {
 function createStudioMockEmbedder(dim: number): Embedder {
   return async (texts: string[]) => {
     return texts.map((text) => {
-      const vector = new Array<number>(dim).fill(0);
+      const vector = Array.from({ length: dim }, () => 0);
       const tokens = text.toLowerCase().match(/[a-z0-9_]+/g) ?? [];
       for (const token of tokens) {
         vector[stableTokenHash(token) % dim] += 1;
@@ -2104,15 +2121,25 @@ function parseRagQuery(body: unknown): { question: string; k: number; types?: Ch
   if (k < 1 || k > 25) {
     throw new StudioHttpError(400, "`k` must be between 1 and 25.");
   }
-  const allowed = new Set<ChunkType>(["table", "column", "cql", "question", "concept", "relationship"]);
   let types: ChunkType[] | undefined;
-  if (Array.isArray(body.types)) {
-    types = body.types.filter((type): type is ChunkType => typeof type === "string" && allowed.has(type as ChunkType));
+  if (body.types !== undefined) {
+    // Leave `types` out to search every type. An unknown type is refused rather than dropped, and
+    // so is an empty list: either would otherwise widen the filter to every type, the opposite of
+    // what the caller asked for (#1047).
+    const allowed = new Set<string>(STUDIO_CHUNK_TYPES);
+    if (
+      !Array.isArray(body.types) ||
+      body.types.length === 0 ||
+      body.types.some((type) => typeof type !== "string" || !allowed.has(type))
+    ) {
+      throw new StudioHttpError(400, `\`types\` must be an array of chunk types: ${STUDIO_CHUNK_TYPES.join(", ")}.`);
+    }
+    types = body.types as ChunkType[];
   }
   return {
     question: body.question.trim(),
     k,
-    ...(types && types.length > 0 ? { types } : {}),
+    ...(types ? { types } : {}),
   };
 }
 

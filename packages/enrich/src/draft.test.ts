@@ -97,6 +97,15 @@ columns:
     expect(fm.columns).toBeUndefined();
   });
 
+  // #1052: Studio keeps Primary entity as typed, so the trim happens here, and blank means absent.
+  it("buildFrontmatter trims primaryEntity, and drops one that is only spaces", () => {
+    const draft = buildTableDraft(physical as never, undefined);
+    draft.primaryEntity = "  Customer Account ";
+    expect(buildFrontmatter(physical as never, "orders-users", draft).primaryEntity).toBe("Customer Account");
+    draft.primaryEntity = "   ";
+    expect(buildFrontmatter(physical as never, "orders-users", draft).primaryEntity).toBeUndefined();
+  });
+
   it("findSensitiveColumnReferences detects sensitive column names in text", () => {
     const refs = findSensitiveColumnReferences(
       "We filter on email when we need to deduplicate users.",

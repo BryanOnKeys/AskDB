@@ -308,6 +308,7 @@ export function isAskDbScaffoldEnvName(name: string): boolean {
 }
 
 // C0 controls, DEL, and the JS line and paragraph separators: never part of a project path.
+// oxlint-disable-next-line no-control-regex -- this pattern finds control characters in a project path.
 const CONTROL_CHAR_PATTERN = /[\u0000-\u001f\u007f\u2028\u2029]/;
 
 function checkRequired(field: string, value: unknown): string {

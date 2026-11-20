@@ -1,0 +1,12 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      // package-requireability.test.ts reads every package's package.json and walks its export
+      // graph through each package's src/. Core depends on none of them, so list them here:
+      // CI replays a cached `test` when its inputs are unchanged.
+      "inputs": ["$TURBO_EXTENDS$", "$TURBO_ROOT$/packages/*/package.json", "$TURBO_ROOT$/packages/*/src/**"]
+    }
+  }
+}

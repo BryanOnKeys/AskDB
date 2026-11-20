@@ -1,0 +1,12 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      // The scaffold plan's tests read @askdb/core's package.json for the `ai` and `zod` ranges a
+      // Prisma project must install. This package doesn't depend on core, so list the file here:
+      // CI replays a cached `test` when its inputs are unchanged.
+      "inputs": ["$TURBO_EXTENDS$", "$TURBO_ROOT$/packages/core/package.json"]
+    }
+  }
+}

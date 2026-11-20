@@ -1,25 +1,48 @@
-# ADR 0047 — Studio shows Suggest drafts inline, and drafts a table's empty fields only after stating the calls
+# ADR 0047: Studio Suggest drafts inline
 
-## Status
-
-Accepted (2026-11-14). The coordinator chose option B on #952 under the 2026-11-05 arrangement (a two-way call the maintainer can reopen). Implemented in PR #980.
-
-## Context
-
-Studio's **Suggest** opened one app-wide modal dialog with 1–3 drafts for one field. A table with five columns took five or more trips through the dialog, the dialog covered the column being described, and drafts for different fields couldn't be compared. The Overview's **Draft enrichment** button promised bulk drafting that didn't exist (#951). Each draft is one model call, and with `modes.omitSensitiveFromPrompt` on, `POST /api/suggest` refuses a sensitive column (#639, ADR 0026).
-
-## Options considered
-
-- **A. Inline drafts.** Drafts appear under the field they belong to, with **Use** and **Dismiss**, for several fields at once. Still one call per field, one field at a time.
-- **B. A, plus "Suggest all empty fields" for the open table (chosen).** One action requests a draft for every empty description and alias of the table and its columns. It costs one model call per field, so it states the count and waits for confirmation.
-- **C. Keep the dialog.** Rejected: it's the friction the issue reports.
+**Status:** accepted · 2026-11-14
 
 ## Decision
 
-Each field with **Suggest** shows its drafts inline, keyed by table, column and field, until **Use** (which fills the unsaved draft) or **Dismiss**. Nothing reaches the artifact until **Save**, so "you confirm every draft before it lands" still holds. **Suggest all empty fields** covers the open table's empty descriptions and aliases, not its primary entity or common query language. It states the number of calls and the sensitive columns it skips, runs only after confirmation, and makes the calls one at a time. Under `omitSensitiveFromPrompt`, Studio doesn't send a column the saved artifact or the unsaved draft marks sensitive. Because every suggestion's prompt is built from the saved artifact, Suggest on a table waits for **Save** while the draft marks the table or a column sensitive that the saved artifact doesn't.
+Studio shows each **Suggest** draft inline, under the field it belongs to, with **Use** and **Dismiss**. Several fields can hold drafts at once. **Use** fills the unsaved draft of the table. Nothing reaches the schema artifact until **Save**.
 
-## Consequences
+**Suggest all empty fields** drafts every empty description and alias of the open table and its columns. It costs one model call for each field. It states the number of calls and the sensitive columns it skips, and it runs only after the author confirms.
 
-- `GET /api/workspace` returns `omitSensitiveFromPrompt`, so the browser can skip the columns the server would refuse. The server's refusal stays the guard.
-- A wide table can mean many model calls; the count shown before the run is the control, and there is no batch endpoint.
-- The Overview's **Enrich tables** button still only opens the Tables view; pointing it at this flow is a separate change.
+With `modes.omitSensitiveFromPrompt` on, Studio sends no column that the saved artifact or the unsaved draft marks sensitive.
+
+## Why
+
+- One modal dialog for one field took five or more trips for a table with five columns. It covered the column and hid the other drafts.
+- Each draft is one model call. The author must see the cost of a bulk run before it starts.
+- The author confirms every draft before it lands in the artifact.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Shown: Suggest returns a draft
+  Shown --> Dismissed: Dismiss
+  Shown --> Unsaved: Use
+  Unsaved --> Saved: Save
+  Saved --> [*]
+  Dismissed --> [*]
+```
+
+## Options
+
+| | Option | Why it lost |
+|---|---|---|
+| A | Inline drafts, plus "Suggest all empty fields" for the open table | **Chosen.** |
+| B | Inline drafts only, one field at a time | A table still takes one click for each field. |
+| C | Keep the dialog | It is the friction that authors reported. |
+
+## Keep
+
+| Rule | Checked by |
+|---|---|
+| "Suggest all empty fields" states the number of model calls and runs only after the author confirms. | `e2e/studio/tables.spec.ts` |
+| A bulk run plans one model call for each empty description and alias, and none for a filled field. It does not cover the primary entity or common query language. | `apps/studio/src/web/lib/suggest-all.test.ts` |
+| A draft reaches the artifact only through **Use** and then **Save**. | review |
+| With omission on, a bulk run skips each sensitive column and states how many it skips. | `apps/studio/src/web/lib/suggest-all.test.ts` |
+| Suggest on a table waits for **Save** while the unsaved draft marks the table or a column sensitive and the saved artifact does not. | `apps/studio/src/web/lib/suggest-all.test.ts` |
+| The server's refusal of a sensitive column stays the guard. The browser's skip only saves the call. | `apps/studio/src/server.test.ts` |
+| The workspace response tells the browser whether omission is on. | `apps/studio/src/server.test.ts` |
+| A bulk run makes its calls one at a time. There is no batch endpoint. | review |

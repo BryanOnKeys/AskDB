@@ -7,9 +7,11 @@ function formatList(list: string[] | undefined): string {
 }
 
 export function ListInput({
+  id,
   value,
   onChange,
 }: {
+  id?: string
   value: string[] | undefined
   onChange: (value: string[]) => void
 }) {
@@ -18,6 +20,7 @@ export function ListInput({
 
   return (
     <Input
+      id={id}
       value={display}
       onChange={(e) => setEditValue(e.target.value)}
       onFocus={() => setEditValue(formatList(value))}

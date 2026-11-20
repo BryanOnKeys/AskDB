@@ -51,7 +51,7 @@
     "build:server": "tsc -p tsconfig.build.json",
     "start": "node dist/bin.js",
     "dev": "pnpm build && pnpm start",
-    "lint": "tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.web.json --noEmit && eslint .",
+    "lint": "tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "test": "vitest run --config ../../vitest.config.ts",
     "doctor": "npx react-doctor@latest"
   },
@@ -100,7 +100,6 @@
   },
   "devDependencies": {
     "@askdb/prisma": "workspace:*",
-    "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/better-sqlite3": "^9.6.0",
     "@types/mssql": "^12.3.0",
@@ -111,9 +110,6 @@
     "better-sqlite3": "^13.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "eslint": "^10.14.0",
-    "eslint-import-resolver-typescript": "^4.4.5",
-    "eslint-plugin-import-x": "^4.18.0",
     "lucide-react": "^1.66.0",
     "mssql": "^12.7.13",
     "mysql2": "^3.24.6",
@@ -125,7 +121,6 @@
     "tailwind-merge": "^3.7.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.72.1",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"
   }

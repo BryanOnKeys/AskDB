@@ -20,6 +20,7 @@ const PORT = /^[0-9]{1,5}$/;
 const DATABASE = /^[A-Za-z0-9_$.-]+$/;
 // A plain filesystem path: no control characters, and none of the characters
 // that would make it a URI query/fragment, a `key=value` list, or userinfo.
+// oxlint-disable-next-line no-control-regex -- a file path must not contain control characters.
 const FILE = /^[^\u0000-\u001f\u007f?#;=@]+$/;
 
 /**
@@ -81,6 +82,7 @@ export function parseConnectionUrl(
   input: string,
   schemes: readonly string[],
 ): ConnectionLabelParts | undefined {
+  // oxlint-disable-next-line no-control-regex -- a connection label must not contain control characters.
   if (/[\s\u0000-\u001f\u007f]/.test(input)) return undefined;
   const match = URL_FORM.exec(input);
   if (!match) return undefined;

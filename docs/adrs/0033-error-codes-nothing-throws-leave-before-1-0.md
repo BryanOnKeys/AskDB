@@ -1,36 +1,36 @@
-# ADR 0033 — An error code nothing reports leaves before 1.0, or is thrown
+# ADR 0033: Error codes nothing reports leave before 1.0
 
-## Status
-
-Accepted (2026-11-05, the coordinating thread's answer to Stop 1 of #682, Q1 and Q2). Implemented in PR #695. It applies ADR 0031's rule for unused exports to the members of public error-code unions.
-
-## Context
-
-1.0 freezes AskDB's public types: after it, removing a member from an exported union needs a major. ADR 0031 covers whole exports; this covers the codes inside them.
-
-The #287 reference audit found five members of `@askdb/core`'s error-code unions that none of AskDB's own code paths reports:
-
-- **`GLOBAL_WITHOUT_REASON`** (`TenantScopeRejectionReason`). A `global` scope with no `reason` failed the zod shape check first and threw `INVALID_SCOPE_SHAPE`, and a blank `reason` passed.
-- **`INCOMPATIBLE_JOIN_SCOPES` and `CROSS_TENANT_WITHOUT_GLOBAL`** (`TenantGuardrailRuleCode`). No check emits them. A custom `AskDialect` could report them through `tenantGuardrail.warnings`, and `ask()` would decide them under the policy's `enforcement`, but AskDB itself never checks either rule.
-- **`INVALID_NAME` and `RESERVED_NAME`** (`QueryParameterRejectionReason`). Only the internal parameter-manifest parser uses them, as the reason of a result that `ask()` logs at debug level and drops. Nothing throws them.
-
-A host that switches on these unions writes branches that can't run, and the types promise checks that AskDB doesn't run.
-
-## Options considered
-
-- **A. Remove the code (chosen for four).** A minor changeset and an upgrade entry name each one. Code that names a removed code stops compiling, and nothing changes at run time.
-- **B. Throw the code where it belongs (chosen for `GLOBAL_WITHOUT_REASON`).** Its rule, "global access must say why", is a few lines in `validateTenantScope()`. Rejected for the two tenant rules: each needs new guardrail logic, a far larger change than the freeze allows, and a later minor can add a checked rule.
-- **C. Keep the codes as reserved for future use.** Rejected: the types would keep promising checks that don't exist, and a host's exhaustive `switch` would keep dead branches through 1.x.
+**Status:** accepted · 2026-11-05
 
 ## Decision
 
-- Before 1.0, a member of a public error-code union that none of AskDB's own code paths reports is removed in one step, unless its rule is cheap enough to enforce now, in which case AskDB throws it. Each code is decided on its own.
-- `validateTenantScope()` throws `TenantScopeError` with `GLOBAL_WITHOUT_REASON`, before the shape check, for a `global` scope whose `reason` is missing, isn't a string, or is blank. `ask()`, `bindPreparedQuery()` and `expandTenantScope()` all validate a scope through it. The exported `tenantScopeSchema` is unchanged.
-- An internal parser keeps its own reason strings in its own union, outside the public error types.
-- The docs-site `test:errors` check keeps `errors.ts` and the core and client reference pages in step both ways: every class and code has a row, and every row names a declared class or code.
+Before 1.0, AskDB removes in one step a member of a public error-code union that none of its own code paths reports. The exception is a code whose rule is cheap to enforce now: AskDB then reports it. Each code is decided on its own. This is ADR 0031's rule, applied to the members of a union.
 
-## Consequences
+One code stays under the exception. A `global` tenant scope must give a `reason` that is not blank, and scope validation refuses a scope without one.
 
-- A host that names a removed code fails to compile after it upgrades, and so does a custom `AskDialect` that reports one of the two tenant rules in `tenantGuardrail.warnings`. The beta.47 upgrade entry says what to use instead.
-- A host that passed a blank `global` reason now gets `TenantScopeError` with `GLOBAL_WITHOUT_REASON`.
-- After 1.0, adding a code is a minor and removing one is a major. A new code lands with its reference row, because `test:errors` fails without it.
+An internal parser keeps its reason strings in its own union, outside the public error types.
+
+After 1.0, a new code is a minor and a removed code is a major.
+
+## Why
+
+- 1.0 freezes the public types. After it, the removal of a union member needs a major.
+- A host that switches on the union writes branches that cannot run.
+- A code that nothing reports promises a check that AskDB does not run.
+
+## Options
+
+| | Option | Why it lost |
+|---|---|---|
+| A | Remove the code, or report it when its rule is cheap to enforce | **Chosen.** |
+| B | Report every code that nothing reports | Two tenant rules each need new guardrail logic, which is a larger change than the freeze allows. |
+| C | Keep the codes as reserved for later use | The types keep the promise of checks that do not exist, and a host's exhaustive `switch` keeps dead branches through 1.x. |
+
+## Keep
+
+| Rule | Checked by |
+|---|---|
+| A public error-code union holds no code that AskDB never reports. A new code lands with the check that reports it. | review |
+| Every error class and code has a row on its reference page, and every row names a declared class or code. | `apps/docs-site/scripts/check-error-reference.mjs` (`pnpm test:errors` in `apps/docs-site`) |
+| Scope validation refuses a `global` scope whose `reason` is missing, blank or not a string. | `packages/core/src/sql/tenant-scope-validate.test.ts` |
+| An internal parser's reason strings stay out of the public error types. | review |

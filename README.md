@@ -141,7 +141,7 @@ pnpm exec askdb ask \
   --schema fixtures/schemas/orders-users.schema \
   --question "How many orders are there?"
 pnpm test     # turbo run test (integration runs when DATABASE_URL is set)
-pnpm lint     # turbo run lint (TypeScript noEmit)
+pnpm lint     # oxlint over the repo, then turbo run lint (TypeScript noEmit)
 ```
 
 Before opening or updating a PR, run the release-style checks:

@@ -44,7 +44,7 @@ _Avoid_: provider, driver
 The set of connector provider adapters a host registered, keyed by provider id (`createConnectorRegistry` in `@askdb/introspect`). Provider ids are open strings, so a third-party engine registers its own. An entry is an adapter or a lazy entry; the host calls `registry.load()` once the engine is selected.
 
 **Lazy entry**:
-A registry entry for an engine package the host may not have installed, `{ provider, load }`: the registry lists it without importing it, and `registry.load()` imports it on first use. Until then the registry's synchronous methods throw for it (ADR 0008, 2026-11-05 amendment). The CLI and Studio register `@askdb/prisma` this way.
+A registry entry for an engine package the host may not have installed, `{ provider, load }`: the registry lists it without importing it, and `registry.load()` imports it on first use. Until then the registry's synchronous methods throw for it (ADR 0008). The CLI and Studio register `@askdb/prisma` this way.
 _Avoid_: lazy adapter, deferred provider
 
 **Connection label**:
