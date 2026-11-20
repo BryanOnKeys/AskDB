@@ -436,17 +436,28 @@ jobs:
   # ── 4. Consumer lab ───────────────────────────────────────────────────────
   # Packs this commit's publishable packages into tarballs, installs them into
   # examples/consumer-lab (its own pnpm root, outside the workspace) and runs
-  # the lab's scenario × dialect matrix against the multi-engine fixture. The
-  # job fails on any FAIL cell (the matrix reporter sets the exit code) and
-  # passes on pass / n/a / known. The table lands in the job summary and
-  # .lab/matrix.json is uploaded, pass or fail.
+  # the lab's scenario × dialect matrix against the multi-engine fixture.
+  #
+  # The matrix runs as two shards, each on its own runner with its own fixture:
+  # one vitest run saturates a 4-vCPU runner, and the lab's MatrixSequencer
+  # (examples/consumer-lab/src/matrix-shards.ts) splits the files by their CI
+  # cost. Each shard uploads .lab/matrix.shard-<i>.json; the `consumer-lab` job
+  # merges them into .lab/matrix.json, prints the table to the job summary and
+  # fails on any FAIL cell, a failed or missing shard, or a failed shard job
+  # (shard 2 also runs the isolated safety proofs). It passes on
+  # pass / n/a / known. `consumer-lab` keeps the required check's name.
   #
   # Docs-only PRs skip it, by `changes`' `docs_only` output (job 0).
-  consumer-lab:
+  consumer-lab-shard:
+    name: consumer-lab (shard ${{ matrix.shard }}/2)
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     env:
       ASKDB_FIXTURE_HOST: 127.0.0.1
     steps:
@@ -488,15 +499,59 @@ jobs:
         run: pnpm lab:use .
 
       # lab:up starts and seeds the fixture, starts the lab's own Postgres (tenant-rls seeds it),
-      # then keeps the install above.
-      - name: Run the consumer lab matrix
-        run: pnpm lab:matrix
+      # then keeps the install above. The shard prints its own table and writes
+      # .lab/matrix.shard-<i>.json; the `consumer-lab` job merges the shards.
+      - name: Run the consumer lab matrix (shard ${{ matrix.shard }}/2)
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: pnpm lab:matrix "--shard=${SHARD}/2"
 
       # The safety cases' effect proofs (#323), on a disposable second fixture (compose project
       # askdb-lab-isolated, ports 25432/23306/23307/21433), never the shared one started above.
       # The runner starts, seeds, tests and removes it, including after a failure. About a minute.
+      # Shard 2 runs it: its heaviest file is the lighter of the two.
       - name: Prove the safety cases' effects on an isolated fixture copy
+        if: ${{ matrix.shard == 2 }}
         run: pnpm lab:safety:isolated
+
+      - name: Upload the shard's matrix
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: consumer-lab-matrix-shard-${{ matrix.shard }}
+          path: examples/consumer-lab/.lab/matrix.shard-${{ matrix.shard }}.json
+          if-no-files-found: warn
+          # .lab/ is a dot-directory, which upload-artifact skips by default.
+          include-hidden-files: true
+
+  # Merges the shards (`pnpm lab:matrix:merge`, run with plain Node: it imports only Node's
+  # built-ins, so this job needs no install).
+  # It runs whenever the shards ran, pass or fail, so the merged table always lands in the
+  # job summary; a missing shard file fails the merge (exit 2), not silently passes.
+  consumer-lab:
+    needs: [changes, consumer-lab-shard]
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Download the shards' matrices
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: consumer-lab-matrix-shard-*
+          path: lab-shards
+
+      - name: Merge the shards into one matrix
+        run: node examples/consumer-lab/src/matrix-merge.mjs lab-shards
 
       - name: Upload the matrix
         if: always()
@@ -507,6 +562,16 @@ jobs:
           if-no-files-found: warn
           # .lab/ is a dot-directory, which upload-artifact skips by default.
           include-hidden-files: true
+
+      # A shard can fail outside the matrix (install, lab:use, the isolated safety proofs)
+      # and still upload a clean shard file, so the merge alone isn't the verdict.
+      - name: Fail if a shard job failed
+        if: ${{ needs.consumer-lab-shard.result != 'success' }}
+        env:
+          RESULT: ${{ needs.consumer-lab-shard.result }}
+        run: |
+          echo "::error::consumer-lab shard jobs finished with result: ${RESULT}"
+          exit 1
 
   # ── 5. verify-askdb replays ──────────────────────────────────────────────
   # The scripted journeys of verify-askdb's feature map (e2e/): the askdb CLI and HTTP API
