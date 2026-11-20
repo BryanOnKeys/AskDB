@@ -37,6 +37,8 @@ Set `ASKDB_REQUIRE_INTEGRATION=1` to make a missing prerequisite (an unset URL, 
 
 Turbo runs tasks in strict env mode: only variables listed in the `test` task's `env` in [`turbo.json`](turbo.json) reach vitest. If you add an integration suite gated on a new variable, add the variable there and gate the suite with `integrationSuite()` from [`scripts/test-utils/integration.mjs`](scripts/test-utils/integration.mjs).
 
+CI caches each package's `lint` and `test` results in Turbo's remote cache and replays them while the task's inputs are unchanged, so a push re-runs only the packages it affects (the test summary marks the replayed ones as cached). A task's inputs are its package's files, its dependencies' builds, the `env` above, and the extra files `turbo.json` lists: `tsconfig.base.json` for every task, `scripts/test-utils/` for `lint` and `test`, and the root `vitest.config.ts`, `askdb.config.ts` and `fixtures/` for `test`. A test that reads a file from outside its package and its dependencies must list that file in the package's own `turbo.json` (see [`apps/docs-site/turbo.json`](apps/docs-site/turbo.json)), or CI can replay a stale pass after the file changes.
+
 ### Multi-engine fixture
 
 [`fixtures/multi-engine`](fixtures/multi-engine/README.md) holds one logical schema and one dataset in PostgreSQL 17, MySQL 8.4, MariaDB 11.4, SQL Server 2022 and SQLite, with a golden logical schema (`dataset/schema.logical.json`) every engine's introspection is compared against. It covers multiple schemas, composite keys and foreign keys, a view, a reserved-word table, a declaratively partitioned Postgres table (ADR 0003), a self-referencing tenant hierarchy, sensitive columns, unicode, dates, decimals and booleans. It replaces the Pagila fixture.

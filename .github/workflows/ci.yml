@@ -61,10 +61,10 @@ jobs:
           fi
 
   # ── 1. Build ──────────────────────────────────────────────────────────────
-  # Compiles all packages and seeds the Turbo cache for later runs. No job waits
-  # for it: each one builds what it uses (turbo's `lint`, `test` and `e2e` tasks
-  # depend on the builds they need; `pnpm smoke:install` and `pnpm lab:use .`
-  # build before packing), so they all start at once.
+  # Compiles all packages, writing each build to Turbo's remote cache. No job
+  # waits for it: each one builds what it uses (turbo's `lint`, `test` and `e2e`
+  # tasks depend on the builds they need; `pnpm smoke:install` and
+  # `pnpm lab:use .` build before packing), so they all start at once.
   build:
     runs-on: ubuntu-latest
     steps:
@@ -85,13 +85,23 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Restore Turbo cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .turbo
-          key: turbo-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            turbo-${{ runner.os }}-
+      # Turbo's remote cache, kept in this repo's Actions cache as one entry per task hash (key
+      # `turbogha_<hash>`). The action starts a local server that speaks Turbo's remote cache API
+      # and exports TURBO_API, TURBO_TOKEN and TURBO_TEAM for later steps; its post step stops it.
+      # Turbo looks up each task when it reaches it and uploads each task that succeeds (failed
+      # tasks are never cached), so a job downloads only what it uses and writes only what changed.
+      # No entry grows: one GitHub hasn't served for 7 days expires.
+      # - build, lint and test write. preflight, consumer-lab and e2e only read: they rebuild what
+      #   build builds. unit-node-matrix has no remote cache, on purpose.
+      # - Access: the action gets the job's Actions runtime token, which reads this repo's caches and
+      #   writes the current ref's (a pull request's entries stay in that pull request). A fork's
+      #   pull request gets the same token, so the cache works there too. No secret is involved.
+      # - If the server can't start, turbo runs without a remote cache (continue-on-error).
+      # - When two jobs build the same changed package at once, both upload it and the second
+      #   upload logs a "Cache not saved" warning. It is harmless: the first upload is the entry.
+      - name: Set up Turbo's remote cache
+        uses: rharkor/caching-for-turbo@760158c05c47e7a764f78e9a22ca3b5a6ed8c52e # v2.5.2
+        continue-on-error: true
 
       - name: Build all packages
         run: pnpm build
@@ -129,13 +139,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Restore Turbo cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .turbo
-          key: turbo-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            turbo-${{ runner.os }}-
+      # Reads and writes Turbo's remote cache; see the build job. A package whose lint inputs
+      # haven't changed replays its last passing lint.
+      - name: Set up Turbo's remote cache
+        uses: rharkor/caching-for-turbo@760158c05c47e7a764f78e9a22ca3b5a6ed8c52e # v2.5.2
+        continue-on-error: true
 
       - name: Lint + typecheck
         run: pnpm lint
@@ -326,13 +334,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Restore Turbo cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .turbo
-          key: turbo-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            turbo-${{ runner.os }}-
+      # Reads and writes Turbo's remote cache; see the build job. A package whose test inputs
+      # (turbo.json `test`: its files, fixtures, the env above) haven't changed replays its last
+      # passing run, and the test summary lists it as cached.
+      - name: Set up Turbo's remote cache
+        uses: rharkor/caching-for-turbo@760158c05c47e7a764f78e9a22ca3b5a6ed8c52e # v2.5.2
+        continue-on-error: true
 
       - name: Create SQL Server test database
         run: >-
@@ -370,8 +377,8 @@ jobs:
   # ── 3. Preflight ──────────────────────────────────────────────────────────
   # Release smoke test + publish dry-run. Runs in parallel with `test` so
   # packaging failures surface without waiting for the full DB test suite.
-  # smoke:install rebuilds packages internally; turbo cache is restored as a
-  # safety net for any direct `pnpm build` calls.
+  # smoke:install builds the packages through Turbo, which replays unchanged
+  # builds from the remote cache.
   #
   # Docs-only PRs skip it, unless they change a package's README.md: that ships
   # in the tarball, and the smoke test checks its links.
@@ -399,13 +406,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Restore Turbo cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .turbo
-          key: turbo-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            turbo-${{ runner.os }}-
+      # smoke:install builds through Turbo (scripts/pack-tarballs.sh runs `pnpm build`), so it
+      # replays builds from Turbo's remote cache. Read-only; see the build job.
+      - name: Set up Turbo's remote cache
+        uses: rharkor/caching-for-turbo@760158c05c47e7a764f78e9a22ca3b5a6ed8c52e # v2.5.2
+        continue-on-error: true
+
+      - name: Read Turbo's remote cache without writing to it
+        run: echo "TURBO_CACHE=local:rw,remote:r" >> "$GITHUB_ENV"
 
       # The release scripts: the prerelease counter (`pnpm version-packages` in the Version
       # PR), the unpublished-version guard (changesets.yml) and the Version PR merge check
@@ -467,13 +475,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Restore Turbo cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .turbo
-          key: turbo-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            turbo-${{ runner.os }}-
+      # `lab:use .` builds through Turbo (scripts/pack-tarballs.sh runs `pnpm build`), so it
+      # replays builds from Turbo's remote cache. Read-only; see the build job.
+      - name: Set up Turbo's remote cache
+        uses: rharkor/caching-for-turbo@760158c05c47e7a764f78e9a22ca3b5a6ed8c52e # v2.5.2
+        continue-on-error: true
+
+      - name: Read Turbo's remote cache without writing to it
+        run: echo "TURBO_CACHE=local:rw,remote:r" >> "$GITHUB_ENV"
 
       - name: Pack this commit's tarballs and install them in the lab
         run: pnpm lab:use .
@@ -527,13 +536,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Restore Turbo cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .turbo
-          key: turbo-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            turbo-${{ runner.os }}-
+      # `pnpm e2e` builds what the replays drive (`e2e` depends on `^build`) and replays those
+      # builds from Turbo's remote cache. Read-only; see the build job.
+      - name: Set up Turbo's remote cache
+        uses: rharkor/caching-for-turbo@760158c05c47e7a764f78e9a22ca3b5a6ed8c52e # v2.5.2
+        continue-on-error: true
+
+      - name: Read Turbo's remote cache without writing to it
+        run: echo "TURBO_CACHE=local:rw,remote:r" >> "$GITHUB_ENV"
 
       # Chromium is cached per Playwright version, which pins its browser build. The
       # version comes from the installed CLI: the lockfile also holds other playwright-core
