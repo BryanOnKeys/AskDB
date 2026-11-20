@@ -6,12 +6,21 @@
     // root `test` task it does not also depend on this package's `build`.
     "test": {
       "dependsOn": ["^build"],
-      // `test:errors` checks the API reference against the two errors files, and `test:examples`
-      // checks the chart pages against the chart example. Both live outside this package.
+      // `test:errors` checks the API reference against the core and client errors files,
+      // `test:exports` against every entry point the core, client, config and ai packages export
+      // (read from source, following imports), and `test:examples` checks the chart pages against
+      // the chart example. All of them live outside this package, and CI replays a cached `test`
+      // when its inputs are unchanged, so they're listed here.
       "inputs": [
         "$TURBO_EXTENDS$",
-        "$TURBO_ROOT$/packages/core/src/errors.ts",
-        "$TURBO_ROOT$/packages/client/src/errors.ts",
+        "$TURBO_ROOT$/packages/ai/package.json",
+        "$TURBO_ROOT$/packages/ai/src/**",
+        "$TURBO_ROOT$/packages/client/package.json",
+        "$TURBO_ROOT$/packages/client/src/**",
+        "$TURBO_ROOT$/packages/config/package.json",
+        "$TURBO_ROOT$/packages/config/src/**",
+        "$TURBO_ROOT$/packages/core/package.json",
+        "$TURBO_ROOT$/packages/core/src/**",
         "$TURBO_ROOT$/examples/chart-a-result/**",
         "$TURBO_ROOT$/examples/quickstart-shop/shop.sql"
       ]

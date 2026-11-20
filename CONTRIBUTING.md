@@ -37,6 +37,8 @@ Set `ASKDB_REQUIRE_INTEGRATION=1` to make a missing prerequisite (an unset URL, 
 
 Turbo runs tasks in strict env mode: only variables listed in the `test` task's `env` in [`turbo.json`](turbo.json) reach vitest. If you add an integration suite gated on a new variable, add the variable there and gate the suite with `integrationSuite()` from [`scripts/test-utils/integration.mjs`](scripts/test-utils/integration.mjs).
 
+CI caches each package's `lint` and `test` results in Turbo's remote cache and replays them while the task's inputs are unchanged, so a push re-runs only the packages it affects (the test summary marks the replayed ones as cached). A task's inputs are its package's files, its dependencies' builds, the `env` above, and the extra files `turbo.json` lists: `tsconfig.base.json` for every task, `scripts/test-utils/` for `lint` and `test`, and the root `vitest.config.ts`, `askdb.config.ts` and `fixtures/` for `test`. A test that reads a file from outside its package and its dependencies must list that file in the package's own `turbo.json` (see [`apps/docs-site/turbo.json`](apps/docs-site/turbo.json)), or CI can replay a stale pass after the file changes.
+
 ### Multi-engine fixture
 
 [`fixtures/multi-engine`](fixtures/multi-engine/README.md) holds one logical schema and one dataset in PostgreSQL 17, MySQL 8.4, MariaDB 11.4, SQL Server 2022 and SQLite, with a golden logical schema (`dataset/schema.logical.json`) every engine's introspection is compared against. It covers multiple schemas, composite keys and foreign keys, a view, a reserved-word table, a declaratively partitioned Postgres table (ADR 0003), a self-referencing tenant hierarchy, sensitive columns, unicode, dates, decimals and booleans. It replaces the Pagila fixture.
@@ -66,6 +68,8 @@ pnpm lab ask --db postgres --model live "…"       # the live OpenAI model, any
 pnpm lab ui                                       # one input on the engines you pick, side by side, replay or live, raw or client
 pnpm lab:test
 pnpm lab:matrix                                   # the suite as a scenario × dialect table (.lab/matrix.json)
+pnpm lab:matrix --shard=1/2                       # one shard of it (.lab/matrix.shard-1.json); each shard needs its own fixture
+pnpm lab:matrix:merge <dir-or-files>              # every shard's file → .lab/matrix.json, the table and the exit code
 pnpm lab:use --restore                            # before committing: restore the lab's manifests
 pnpm lab:down                                     # stop the fixture; its data and the lab install stay
 pnpm lab:reset                                    # start over: fixture reseeded, committed baseline reinstalled
@@ -75,7 +79,7 @@ pnpm lab:reset                                    # start over: fixture reseeded
 
 On the replay model, `lab ask` answers only questions in the lab's catalog, from hand-written replies per dialect (`--model live` answers anything and grades catalog questions against the oracle); adding a question means adding its replies and its oracle, the expected answer computed from the seed data, which `test/results.test.ts` compares with the rows every engine returns (see the lab README).
 
-Lab test names start with `[<dialect>] <scenario-id>`, which is how `lab:matrix` places each result; the cell values and how to mark a known bug are in the [lab README](examples/consumer-lab/README.md#the-matrix). `lab:matrix` exits non-zero on any `FAIL` cell, and CI's `consumer-lab` job runs it on every pull request (docs-only ones excepted) against tarballs packed from the PR; see [In CI](examples/consumer-lab/README.md#in-ci).
+Lab test names start with `[<dialect>] <scenario-id>`, which is how `lab:matrix` places each result; the cell values and how to mark a known bug are in the [lab README](examples/consumer-lab/README.md#the-matrix). `lab:matrix` exits non-zero on any `FAIL` cell, and CI's `consumer-lab` job runs it on every pull request (docs-only ones excepted) against tarballs packed from the PR; see [In CI](examples/consumer-lab/README.md#in-ci). `--shard=<i>/<n>` splits the suite's files between machines by what each costs in CI (`examples/consumer-lab/src/matrix-shards.ts`, whose weights a new test file joins at a default until it's measured), and `lab:matrix:merge` gives the matrix and exit code the unsharded run would have; see [Sharding](examples/consumer-lab/README.md#sharding).
 
 `lab:use` rewrites the lab's `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml`. The committed versions are the `npm:latest` baseline, so don't commit them after any other target (a tarball install writes `file:` paths into them). To refresh the baseline after a release ships, run `pnpm lab:use npm:latest`, commit those three files, and delete the entries for older releases from `examples/consumer-lab/known-release-failures.json` (every step is in `.agents/skills/consumer-lab/baseline-refresh.md`). Unlike the package suites above, lab tests don't use `integrationSuite()`: the lab exists to run against real databases, so a missing fixture or install fails the suite instead of skipping it. The one exception is an older target that lacks a documented capability a scenario needs: that scenario reports `n/a (capability: …)` (see the lab README).
 
@@ -85,7 +89,11 @@ The workspace root lists `@askdb/config` as a dev dependency so Node can resolve
 
 ## Dependency Audit
 
-CI's `audit` job (and `pnpm preflight`) runs `pnpm run audit` — [`audit-ci`](https://github.com/IBM/audit-ci) over `pnpm audit`, failing on any advisory of **moderate** severity or higher, in any dependency (dev-only ones included). Configuration lives in [`.audit-ci.json`](.audit-ci.json).
+`pnpm run audit` runs [`audit-ci`](https://github.com/IBM/audit-ci) over `pnpm audit`, failing on any advisory of **moderate** severity or higher, in any dependency (dev-only ones included). Configuration lives in [`.audit-ci.json`](.audit-ci.json). It runs in three places:
+
+- **CI's `audit` job**, on a PR or push to `main` that changes a dependency file: any `package.json` or `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.audit-ci.json` or `.npmrc` (`scripts/ci-changes.sh`). Other changes skip it, so a new advisory against a dependency already on `main` doesn't fail unrelated PRs.
+- **The daily scheduled audit** of `main` ([`audit-scheduled.yml`](.github/workflows/audit-scheduled.yml), also runnable by hand from the Actions tab). When it fails, it opens an issue titled "Dependency audit fails on main", or comments on the open one, naming the advisories. Fix it with the `repair-dependency-audit` skill and the steps below. The fixing PR changes a dependency file, so CI's `audit` job checks it.
+- **`pnpm preflight`**, locally, on every run.
 
 When it fails, prefer fixing over allowlisting:
 

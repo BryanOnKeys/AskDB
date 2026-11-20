@@ -1,20 +1,14 @@
 /**
  * Vitest reporter for `pnpm lab:matrix`: a `scenario × dialect` table built from test
  * results, printed and written to `.lab/matrix.json` (and appended to
- * `$GITHUB_STEP_SUMMARY` when set).
+ * `$GITHUB_STEP_SUMMARY` when set). `src/matrix-table.mjs` builds the table and says what
+ * each cell value means; this reads each test's outcome from vitest.
  *
- * A test joins the matrix through its full name (describe blocks + test name):
- * `[<dialect>] <scenario-id>…`, for example `describe("[mysql]")` around
- * `it("introspect-golden: …")`. Several tests may share a cell. A cell is:
- *
- * - `FAIL` if any of its tests failed (an `it.fails` test whose bug is fixed fails too);
- * - `known (#N)` if its tests are `it.fails` cases naming issue `#N` that failed as expected;
- * - `miss (reason; …)` if its tests passed but annotated a live-model miss with
- *   `ctx.annotate("<reason>", "miss")` (`test/live.test.ts`): the model's answer was wrong,
- *   which is model quality, not a product failure;
- * - `pass` if its tests passed;
- * - `n/a (reason)` if its tests were skipped with `ctx.skip("reason")`;
- * - `-` if no test ran for it (none exists, or a filter excluded it).
+ * A test's outcome: `fail` if it failed (an `it.fails` test whose bug is fixed fails too);
+ * `known` if it is an `it.fails` case naming issue `#N` that failed as expected; `miss` if it
+ * passed but annotated a live-model miss with `ctx.annotate("<reason>", "miss")`
+ * (`test/live.test.ts`): the model's answer was wrong, which is model quality, not a product
+ * failure; `pass` if it passed; `na` if it was skipped with `ctx.skip("capability: …")`.
  *
  * Any `FAIL` cell fails the run (exit code 1), even one vitest counts as passing: an
  * `it.fails` test that names no issue, or a skip that isn't a capability gate. CI's
@@ -24,56 +18,26 @@
  * passing test a failure), in `matrix.json` and in the step summary, so CI shows the reason
  * next to the table. Errors outside any test (unhandled errors) are listed too.
  *
- * After the test rows come annotation rows, marked `*`: facts the golden schema holds but
- * the schema artifact can't express, so no test can compare them. They are a static list, not test
- * results; see {@link ARTIFACT_LIMITS}.
+ * A sharded run (`vitest run --shard=<i>/<n>`) holds only some of the suite's files, so it
+ * writes no `matrix.json` and no step summary. It prints its own cells, writes its outcomes to
+ * `.lab/matrix.shard-<i>.json`, and still exits 1 on a `FAIL` cell, which no other shard can
+ * clear. `src/matrix-merge.mjs` (`pnpm lab:matrix:merge`) combines every shard's file into the
+ * matrix one unsharded run writes.
  */
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { LAB_STATE } from "./paths.js";
-import type { Reporter, SerializedError, TestCase, TestModule } from "vitest/node";
+import { join, relative, sep } from "node:path";
+import { LAB_ROOT, LAB_STATE } from "./paths.js";
+import type { Reporter, SerializedError, TestCase, TestModule, TestRunEndReason, Vitest } from "vitest/node";
 import { DIALECTS } from "./fixture.js";
+import { renderMatrix, SHARD_FORMAT, shardFile, type MatrixRun, type MatrixShard, type Outcome } from "./matrix-table.mjs";
 
-const NAME = /^\[([a-z]+)\][\s>]+([a-z0-9][\w-]*)/i;
 const ISSUE = /\(#(\d+)\)/g;
-
-/**
- * The golden-schema facts the schema artifact can't express, from the "Not comparable" rule in
- * `fixtures/multi-engine/dataset/NORMALIZATION.md` (survey note 6 in
- * `docs/specs/consumer-lab.md`). Rendered as `n/a (not in the schema artifact)` on every dialect.
- */
-const ARTIFACT_LIMITS = ["unique-constraints", "view-marker"] as const;
-const ARTIFACT_LIMIT_TEXT = "n/a (not in the schema artifact)";
-
-type Status = "pass" | "fail" | "known" | "miss" | "na";
 
 /** The annotation type a live-model test gives a miss (`ctx.annotate(reason, "miss")`). */
 const MISS = "miss";
 
-interface Failure {
-  test: string;
-  reason: string;
-}
-
-interface Cell {
-  status: Status;
-  text: string;
-  tests: string[];
-  /** Only on a `FAIL` cell: each failing test and why it failed. */
-  failures?: Failure[];
-}
-
-interface Outcome {
-  status: Status | "not-run";
-  detail?: string;
-  /** Why a `fail` outcome failed. */
-  reason?: string;
-}
-
 const MAX_REASON_LINES = 30;
 const MAX_REASON_CHARS = 3000;
-/** Failures written to the step summary; the rest are in the step log and `matrix.json`. */
-const MAX_SUMMARY_FAILURES = 25;
 // oxlint-disable-next-line no-control-regex -- ESC starts an ANSI color code.
 const ANSI = /\u001b\[[0-9;]*m/g;
 
@@ -127,134 +91,52 @@ function outcomeOf(test: TestCase): Outcome {
   return { status: "not-run" };
 }
 
-function combine(outcomes: Outcome[], tests: string[]): Cell | undefined {
-  const ran = outcomes.filter((o) => o.status !== "not-run");
-  if (!ran.length) return undefined;
-  // Each test's detail may list several items ("#377, #376"); list each item once per cell.
-  const details = (s: Status) =>
-    [...new Set(ran.filter((o) => o.status === s).flatMap((o) => (o.detail ?? "").split(", ")).filter(Boolean))].join(", ");
-  if (ran.some((o) => o.status === "fail")) {
-    const failures = outcomes.flatMap((o, i) => (o.status === "fail" ? [{ test: tests[i]!, reason: o.reason ?? "failed" }] : []));
-    return { status: "fail", text: "FAIL", tests, failures };
-  }
-  if (ran.some((o) => o.status === "known")) return { status: "known", text: `known (${details("known")})`, tests };
-  // A miss reason may hold ", " itself, so misses are joined with "; " and never split.
-  if (ran.some((o) => o.status === "miss")) {
-    const misses = [...new Set(ran.flatMap((o) => (o.status === "miss" && o.detail ? o.detail.split("; ") : [])))];
-    return { status: "miss", text: `miss (${misses.join("; ")})`, tests };
-  }
-  // A gated test is never hidden behind a passing one in the same cell.
-  if (ran.some((o) => o.status === "na")) return { status: "na", text: `n/a (${details("na")})`, tests };
-  return { status: "pass", text: "pass", tests };
-}
-
-function table(header: string[], rows: string[][]): string {
-  const widths = header.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i]!.length)));
-  const line = (cells: string[]) => cells.map((c, i) => c.padEnd(widths[i]!)).join("  ").trimEnd();
-  return [line(header), line(widths.map((w) => "-".repeat(w))), ...rows.map(line)].join("\n");
-}
-
-function markdown(header: string[], rows: string[][]): string {
-  const line = (cells: string[]) => `| ${cells.join(" | ")} |`;
-  return [line(header), line(header.map(() => "---")), ...rows.map(line)].join("\n");
-}
-
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-/** One collapsible block: a title, and a body shown as preformatted text. */
-function details(title: string, body: string): string {
-  return `<details><summary>${title}</summary>\n\n<pre>${escapeHtml(body)}</pre>\n\n</details>`;
-}
-
 function installTarget(): string | undefined {
   const file = join(LAB_STATE, "target.json");
   return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as { label?: string }).label : undefined;
 }
 
+/** A test file's path from the lab's root, with `/` separators, so shards' files compare across machines. */
+const labPath = (moduleId: string) => relative(LAB_ROOT, moduleId).split(sep).join("/");
+
 export default class MatrixReporter implements Reporter {
-  onTestRunEnd(testModules: ReadonlyArray<TestModule>, unhandledErrors: ReadonlyArray<SerializedError>): void {
-    const scenarios = new Map<string, Map<string, { outcomes: Outcome[]; tests: string[] }>>();
-    const unmatched: string[] = [];
+  private shard: { index: number; count: number } | undefined;
 
+  onInit(vitest: Vitest): void {
+    this.shard = vitest.config.shard;
+  }
+
+  onTestRunEnd(testModules: ReadonlyArray<TestModule>, unhandledErrors: ReadonlyArray<SerializedError>, reason: TestRunEndReason): void {
     const modules = [...testModules].sort((a, b) => a.moduleId.localeCompare(b.moduleId));
-    for (const test of modules.flatMap((m) => [...m.children.allTests()])) {
-      const match = NAME.exec(test.fullName);
-      const dialect = match?.[1]?.toLowerCase();
-      if (!match || !(DIALECTS as readonly string[]).includes(dialect!)) {
-        unmatched.push(test.fullName);
-        continue;
-      }
-      const row = scenarios.get(match[2]!) ?? new Map();
-      scenarios.set(match[2]!, row);
-      const cell = row.get(dialect!) ?? { outcomes: [], tests: [] };
-      row.set(dialect!, cell);
-      cell.outcomes.push(outcomeOf(test));
-      cell.tests.push(test.fullName);
-    }
-
-    const rows = [...scenarios].map(([scenario, byDialect]) => ({
-      scenario,
-      cells: Object.fromEntries(
-        DIALECTS.flatMap((d) => {
-          const entry = byDialect.get(d);
-          const cell = entry && combine(entry.outcomes, entry.tests);
-          return cell ? [[d, cell]] : [];
-        }),
-      ) as Record<string, Cell>,
-    }));
-
-    const annotations = ARTIFACT_LIMITS.map((scenario) => ({
-      scenario,
-      annotation: "not in the schema artifact (fixtures/multi-engine/dataset/NORMALIZATION.md)",
-    }));
-
-    const header = ["scenario", ...DIALECTS];
-    const cells = [
-      ...rows.map((r) => [r.scenario, ...DIALECTS.map((d) => r.cells[d]?.text ?? "-")]),
-      ...annotations.map((a) => [`${a.scenario} *`, ...DIALECTS.map(() => ARTIFACT_LIMIT_TEXT)]),
-    ];
-    const target = installTarget();
-    const failedCells = rows.flatMap((r) =>
-      DIALECTS.filter((d) => r.cells[d]?.status === "fail").map((d) => ({ name: `${r.scenario} [${d}]`, cell: r.cells[d]! })),
-    );
-    const failed = failedCells.map((f) => f.name);
-    const unhandled = unhandledErrors.map((e) => errorText([e]) ?? "unhandled error with no message");
-
-    const out = [
-      "",
-      `Consumer lab matrix${target ? ` (target: ${target})` : ""}`,
-      "",
-      table(header, cells),
-      "",
-      "- = no test ran for this dialect",
-      "* = annotation, not a test result: a golden-schema fact the schema artifact can't express (NORMALIZATION.md)",
-    ];
-    if (failed.length) out.push("", `${failed.length} FAIL cell(s): ${failed.join(", ")}`);
-    if (unmatched.length) {
-      out.push("", `Not in the matrix (name doesn't start with "[<dialect>] <scenario-id>"):`, ...unmatched.map((n) => `  ${n}`));
-    }
-    if (unhandledErrors.length) out.push("", `${unhandledErrors.length} unhandled error(s): see the output above.`);
-    console.log(out.join("\n"));
-
+    const run: MatrixRun = {
+      target: installTarget(),
+      dialects: [...DIALECTS],
+      tests: modules.flatMap((m) => [...m.children.allTests()].map((test) => ({ file: labPath(m.moduleId), name: test.fullName, outcome: outcomeOf(test) }))),
+      unhandledErrors: unhandledErrors.map((e) => errorText([e]) ?? "unhandled error with no message"),
+      files: Object.fromEntries(modules.map((m) => [labPath(m.moduleId), Math.round(m.diagnostic().duration / 100) / 10])),
+      vitest: reason,
+    };
     mkdirSync(LAB_STATE, { recursive: true });
-    const json = { target, generatedAt: new Date().toISOString(), dialects: DIALECTS, rows, annotations, unmatched, unhandledErrors: unhandled };
-    writeFileSync(join(LAB_STATE, "matrix.json"), `${JSON.stringify(json, null, 2)}\n`);
 
-    const summary = process.env.GITHUB_STEP_SUMMARY;
-    if (summary) {
-      const verdict = failed.length ? `**${failed.length} FAIL cell(s):** ${failed.join(", ")}\n\n` : "";
-      const blocks = failedCells
-        .flatMap(({ name, cell }) => (cell.failures ?? []).map((f) => details(`<code>${escapeHtml(name)}</code>: ${escapeHtml(f.test)}`, f.reason)));
-      const shown = blocks.slice(0, MAX_SUMMARY_FAILURES);
-      if (blocks.length > shown.length) shown.push(`…and ${blocks.length - shown.length} more failing test(s): see the step log or \`matrix.json\`.`);
-      const why = shown.length ? `#### Why they failed\n\n${shown.join("\n\n")}\n\n` : "";
-      const errors = unhandled.length
-        ? `**${unhandled.length} unhandled error(s)** (outside any test):\n\n${unhandled.map((u, i) => details(`Unhandled error ${i + 1}`, u)).join("\n\n")}\n\n`
-        : "";
-      appendFileSync(summary, `### Consumer lab matrix${target ? ` (${target})` : ""}\n\n${markdown(header, cells)}\n\n${verdict}${why}${errors}`);
+    if (this.shard) {
+      const { index, count } = this.shard;
+      const file = shardFile(LAB_STATE, index);
+      const { text, failed } = renderMatrix(run, {
+        title: `Consumer lab matrix, shard ${index}/${count}`,
+        notes: [`This shard's cells only. \`pnpm lab:matrix:merge\` combines every shard's into the matrix; this shard's outcomes are in ${relative(LAB_ROOT, file)}.`],
+      });
+      console.log(text);
+      const shard: MatrixShard = { format: SHARD_FORMAT, shard: { index, count }, generatedAt: new Date().toISOString(), ...run };
+      writeFileSync(file, `${JSON.stringify(shard, null, 2)}\n`);
+      // A FAIL cell stays FAIL whatever the other shards hold.
+      if (failed.length) process.exitCode = 1;
+      return;
     }
+
+    const { text, json, summary, failed } = renderMatrix(run);
+    console.log(text);
+    writeFileSync(join(LAB_STATE, "matrix.json"), `${JSON.stringify(json, null, 2)}\n`);
+    if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
     // Vitest only ever raises the exit code, so this sticks; it never masks vitest's own failures.
     if (failed.length) process.exitCode = 1;
   }
