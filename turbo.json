@@ -1,6 +1,7 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "ui": "stream",
+  "globalDependencies": ["tsconfig.base.json"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -11,8 +12,12 @@
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/vitest.config.ts",
+        "$TURBO_ROOT$/askdb.config.ts",
         "$TURBO_ROOT$/scripts/test-utils/**",
-        "$TURBO_ROOT$/fixtures/**"
+        "$TURBO_ROOT$/fixtures/**",
+        "!$TURBO_ROOT$/fixtures/**/.data",
+        "!$TURBO_ROOT$/fixtures/**/.turbo",
+        "!$TURBO_ROOT$/fixtures/**/.vitest"
       ],
       "env": [
         "ASKDB_REQUIRE_INTEGRATION",
@@ -24,7 +29,7 @@
         "UPDATE_RAG_GOLDEN"
       ],
       "passThroughEnv": ["ASKDB_TEST_SUMMARY_DIR"],
-      "outputs": []
+      "outputs": [".vitest/test-summary.json"]
     },
     "e2e": {
       "dependsOn": ["^build"],
@@ -34,6 +39,7 @@
     },
     "lint": {
       "dependsOn": ["^build", "^lint"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/scripts/test-utils/**"],
       "outputs": []
     }
   }
