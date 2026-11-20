@@ -1,46 +1,53 @@
-# ADR 0040 — Approving the Version PR is the release approval
+# ADR 0040: Approving the Version PR is the release approval
 
-## Status
-
-Accepted (2026-11-06, maintainer decision on #354 to merge #432; the publish-time check and the agent rule settled by the coordinator on 2026-11-07, in #432's review). Implemented in `.github/workflows/changesets.yml`, `.github/workflows/release.yml`, `scripts/check-unpublished-versions.mjs`, `scripts/check-version-pr-merge.mjs`, `docs/release.md` and `AGENTS.md`.
-
-## Context
-
-A release had two approval points: the maintainer's review of the App-authored Version PR, and then a deployment approval on `release.yml`'s `publish` job, from the `npm-publish` environment's required reviewer. The second repeated the first. `.github/CODEOWNERS` names the maintainer for every path, and the `main` ruleset requires a code-owner review, so the Version PR can't merge until the maintainer approves it.
-
-- **Publishing ships whatever npm lacks.** `publish` runs `pnpm -r publish`, which publishes every public package whose version isn't on npm, built from the commit CI tested on `main`. Nothing ties those versions to the Version PR.
-- **The deployment approval was an accidental stop.** It showed a pending deployment, not what would publish or from which commit. When a Version PR's merge commit got no release run (its CI failed, or a later PR merged before CI finished), the next green commit published the approved versions with its own code. Only the deployment approval stood in the way, and it showed no commit or version list to check against.
-- **Agents run `gh` with the maintainer's credentials.** The coordinator enables auto-merge on the Version PR, and merges it by hand when auto-merge doesn't fire (#708, #763, #855).
-
-## Options considered
-
-### Keep the environment's required reviewer
-
-Two approvals per release, the second without the information to judge it. Rejected: it repeats the PR review and doesn't stop the wrong-commit publish on purpose.
-
-### The Version PR review as the only approval, with no other change
-
-Rejected: without the environment gate, an unpublished version that reaches `main` any other way publishes with no stop, and so does an approved Version PR's versions built from a later commit.
-
-### The Version PR review, plus a check where versions enter `main` and one where they leave it (chosen)
-
-- **Entry:** `changesets.yml` fails any PR but the Version PR that adds a public `name@version` npm doesn't have: a version bump, a new public package, or a package made public. It reads the public packages through the same function `release-unpublished.mjs` publishes from (`scripts/release-packages.mjs`), so every manifest format pnpm reads and symlinked manifests count.
-- **Exit:** `release.yml`'s `approved` job lets `publish` run only when the commit is the merge commit of a merged `changeset-release/main` PR from this repository, and that merge added every version `publish` would ship: none of them was already a public, unpublished `name@version` in the merge's first parent. It reads the commit's PRs through the GitHub API with `pull-requests: read`, in a job of its own, so the job that holds the OIDC token gains no permission.
-
-### Also require an approving review at publish time
-
-Not done. The ruleset already requires the code-owner review before the merge, and checking it again would repeat the ruleset and name the approver in the workflow. The one path it would close is an admin bypass merge of the Version PR itself.
+**Status:** accepted · 2026-11-06
 
 ## Decision
 
-- **The maintainer's approval of the Version PR is the release approval.** Once the Version PR is approved and merged, `release.yml` publishes with no further approval. The `npm-publish` environment stays, limited to `main`, with no required reviewer: every trusted publisher names it, and it keeps OIDC to the `publish` job on `main`.
-- **Only the Version PR adds unpublished versions** (the entry check), **and only its merge commit publishes them, only the ones it added** (the exit check).
-- **An agent never approves the Version PR,** even when `gh` runs with the maintainer's credentials. It may enable auto-merge on it, or merge it, only after the maintainer has approved it (`AGENTS.md`).
+The maintainer's approval of the Version PR (`changeset-release/main`) is the release approval. After that PR merges, `release.yml` publishes to npm with no second approval.
 
-## Consequences
+Two checks tie what ships to what the maintainer approved. An entry check in `changesets.yml` fails any other PR that adds a public `name@version` npm does not have. An exit check in `release.yml` lets `publish` run only on the merge commit of a merged Version PR. It publishes only the versions that merge added.
 
-- **A refused publish needs a hand publish.** When the `approved` job refuses a commit, approved versions are on `main` but not on npm. The maintainer publishes each by hand from the merge commit of the Version PR that added it (`docs/release.md`, "Publishing by Hand"), so what ships is what was approved.
-- **A new public package's first version is published by hand** from its PR branch, before the PR merges. The entry check fails the PR until that version is on npm, and the pipeline can only publish a package that has a trusted publisher.
-- **An admin bypass merge** of another PR skips the entry check, but the exit check refuses a version it adds, from that commit or with a later Version PR. That version has no approval, so it's reverted, or published by hand on purpose. An admin bypass merge of the Version PR publishes without the approval.
-- **The maintainer removes the environment's required reviewer** after this lands (Settings → Environments → `npm-publish`). Until then, `publish` still waits for that approval.
-- **Changing either check, or adding a publish path,** amends this ADR. The rules both checks share live in `scripts/release-packages.mjs`, with self-tests that CI's `preflight` job runs.
+An agent never approves the Version PR, even when `gh` runs with the maintainer's credentials.
+
+## Why
+
+- The old second approval, a required reviewer on the `npm-publish` environment, repeated the PR review. It showed no commit and no version list to judge.
+- Publishing ships every public version that npm lacks, from the commit CI tested. Without the checks, a later commit can publish approved versions with its own code.
+- Agents run `gh` as the maintainer, so the rule must name who approves.
+
+```mermaid
+flowchart LR
+  other[Any other PR] --> entry["Entry check<br/>(changesets.yml)"]
+  entry -->|adds an unpublished version| fail[PR fails]
+  vpr[Version PR] --> approve[Maintainer approves]
+  approve --> merge[Merge commit on main]
+  merge --> exit["Exit check<br/>(release.yml)"]
+  exit -->|versions this merge added| publish[Publish to npm]
+  exit -->|any other commit or version| refuse[Refuse]
+```
+
+## Options
+
+| | Option | Why it lost |
+|---|---|---|
+| A | The Version PR review, with an entry check and an exit check | **Chosen.** |
+| B | Keep the environment's required reviewer | It repeats the PR review, and it does not stop a publish from the wrong commit on purpose. |
+| C | The Version PR review as the only approval, with no checks | An unpublished version that reaches `main` another way publishes with no stop, and so does an approved version built from a later commit. |
+| D | Also require an approving review at publish time | It repeats the `main` ruleset and names the approver in the workflow, to close only an admin bypass merge of the Version PR. |
+
+## Keep
+
+| Rule | Checked by |
+|---|---|
+| An agent never approves the Version PR. It enables auto-merge on it, or merges it, only after the maintainer approves it. | review |
+| Only the Version PR adds a public `name@version` that npm does not have. Any other PR that adds one fails, and the check fails closed when it cannot reach npm. | `scripts/check-unpublished-versions.test.mjs` |
+| `publish` runs only on the merge commit of a merged `changeset-release/main` PR from this repository, and only when that merge added every version to publish. | `scripts/check-version-pr-merge.test.mjs` |
+| Both checks read the public packages through `scripts/release-packages.mjs`, the module the publish list uses. | `scripts/check-unpublished-versions.test.mjs`, `scripts/check-version-pr-merge.test.mjs` |
+| The exit check runs in a job of its own. The job that holds the OIDC token gets no permission to read pull requests. | review |
+| The `npm-publish` environment stays, limited to `main`, with no required reviewer. Every trusted publisher names it. | review |
+| A version the exit check refuses is published by hand from the merge commit of the Version PR that added it. A version no Version PR added is reverted. | review |
+| A new public package's first version is published by hand from its PR branch, before the PR merges. | review |
+| A change to either check, or a new publish path, needs a new ADR. | review |
+
+`docs/release.md` holds the steps for a refused publish and for a hand publish.

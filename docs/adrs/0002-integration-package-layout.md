@@ -1,67 +1,50 @@
-# ADR 0002 — Integration-package layout
+# ADR 0002: One package per integration surface
 
-Status: Accepted (2026-05-10). Amended 2026-10 (dialect specs live in `@askdb/core`; see Amendments). Superseded in part 2026-11-05 by [ADR 0029](0029-core-owns-built-in-dialect-specs.md) (`@askdb/core` owns the built-in dialect specs).
-Supersedes (in part): Phase 4 decision to ship `createPostgresExecutor` from a `@askdb/core/postgres` subpath (`docs/specs/distribution.md`, "Postgres helper packaging").
-
-## Context
-
-Phase 4 packaged the built-in `pg`-backed executor inside `@askdb/core` under a separate `@askdb/core/postgres` subpath. The intent was to let consumers who only used a custom executor avoid the `pg` peer dependency, while keeping all first-party Postgres code in one place.
-
-By Phase 6 (introspection) and Phase 7 (TUI enrichment), Postgres had spread into both `@askdb/core` and `@askdb/introspect`:
-
-- `@askdb/core` owned `validatePostgresSelectSql`, `generatePostgresSelectSql`, NL→SQL prompt strings, the `pg`-backed executor, and a `connectionString` shortcut on `ask()`.
-- `@askdb/introspect` shipped a built-in Postgres connector at `src/postgres/` plus a Postgres-shaped `IntrospectionInput` discriminated union.
-
-Forward-looking integrations make this layout untenable:
-
-- **MySQL** would need its own templates, row shapes, and dialect rules, but the catalog-driven shape fits `IntrospectionInput`.
-- **Prisma** has no live executor and no catalog templates — its input is a `schema.prisma` file. Forcing it into `IntrospectionInput`'s `live | from-export` union is a square peg.
+**Status:** accepted · 2026-05-10
 
 ## Decision
 
-Reorganize AskDB around **one package per integration surface**, not per database engine and not per layer.
+AskDB has one package for each integration surface, not one for each layer.
 
-- `@askdb/core` is dialect-agnostic. It defines the `ask()` pipeline, the schema/IR types, modes, and logging. It returns SQL only, does not import `pg`, does not know what SQL dialect is being generated, and does not construct executors.
-- `@askdb/introspect` is engine-agnostic. It defines the `Connector<TInput>` interface (generic over the integration's input shape), the orchestrator, and the Schema v2 renderer. It does not ship a default connector and does not declare what live vs. from-export means.
-- Integration packages (`@askdb/postgres`, future `@askdb/mysql`, `@askdb/prisma`, ...) own their dialect, their connector, their input shape, their catalog query runners, and any engine-specific helpers (e.g. SQL templates, bundle readers).
+| Package | Owns | Never holds |
+|---|---|---|
+| `@askdb/core` | The `ask()` pipeline, the schema types, modes, logging and the built-in dialect specs (ADR 0029) | A database driver, a connection, or code that runs generated SQL |
+| `@askdb/introspect` | The `Connector<TInput>` contract, the orchestrator, the Schema v2 renderer, the connector registry and the engine kit (ADR 0008) | A default connector, an engine's input type, a driver |
+| An engine package (`@askdb/postgres`, `@askdb/prisma` and the others) | Its driver, its connector, its connector input type and its catalog queries | Nothing of another engine |
 
-Concretely:
+`ask()` takes a `dialect` and returns SQL. It has no option for a connection or an executor. Each engine defines its own connector input, and a connector's SQL templates are optional.
 
-1. The `@askdb/core/postgres` subpath is removed.
-2. `ask()` accepts a required `dialect` adapter (`AskDialect`). `@askdb/postgres` exports `postgresDialect`. The `connectionString`, `execute`, and `executor` options on `ask()` are removed.
-3. `@askdb/introspect`'s `IntrospectionInput` discriminated union is removed from the public API. `@askdb/postgres` exports `PostgresIntrospectionInput`. Future integrations export their own input types.
-4. `Connector` becomes generic over `TInput`; `templates()` is optional (Prisma legitimately does not have one).
-5. The standalone `askdb-introspect` binary retires. Introspection is reached via `askdb introspect` (an `askdb` subcommand).
+The packages under `apps/` are first-party products, not extension points. `askdb introspect` is the one command that introspects.
 
-## Rationale
+## Why
 
-- **Prisma's input is not the same kind of thing as Postgres's.** A discriminated `live | from-export` union baked into the core contract forces every future integration to pretend it fits that model. Connector-owned input shapes keep each integration's seam honest.
-- **Dialect is integration-package knowledge.** Validating that a string starts with `SELECT` is universal; the actual forbidden-keyword list, the prompt wording, and the catalog query strings are not.
-- **Apps are not libraries.** `cli`, `http-api`, `tui`, and `docs-site` are first-party reference apps, not extension points. They live under `apps/` to make that boundary explicit. The supported user-facing product surface is `askdb`, batteries-included Prisma-style.
-- **Catalog runners are scoped to introspection.** `@askdb/postgres` bundles dialect + connector + bundle reader + a `pg` catalog query runner for live introspection. Generated-SQL execution is outside AskDB's package API.
+- A Prisma schema file and a live Postgres catalog are different kinds of input. One shared input type forces each new integration to pretend that it fits.
+- A host installs only the driver it uses. `@askdb/core` installs with no database dependency.
+- A new engine is a new package, with no change to `@askdb/introspect`. A new built-in dialect also adds its spec to core (ADR 0029).
 
-## Consequences
+```mermaid
+flowchart LR
+  apps["Apps<br/>(askdb, Studio)"] -->|depend on| engines["Engine packages<br/>(driver, connector, catalog queries)"]
+  engines -->|depend on| introspect["@askdb/introspect<br/>(contract, registry, kit)"]
+  introspect -->|depends on| core["@askdb/core<br/>(ask, dialect specs, no driver)"]
+```
 
-- Breaking changes for pre-1.0 consumers: import paths, `ask()` signature, removal of generated-SQL execution, and introspection wiring. No migrator ships — pre-1.0 makes this acceptable. The changeset records the break.
-- Adding a new integration (`@askdb/mysql`, `@askdb/prisma`) is a self-contained package addition. No core or introspect changes required as long as the contracts stay stable.
-- The Postgres dialect remains the only one shipping in this PR. A second dialect would prove out the contract; until then we treat the dialect adapter shape as provisional and stable enough for one user.
+## Options
 
-## Out of scope
+| | Option | Why it lost |
+|---|---|---|
+| A | One package for each integration surface | **Chosen.** |
+| B | Keep the Postgres code in core, behind a `@askdb/core/postgres` subpath | Postgres code had spread into core and `@askdb/introspect`, and each new engine would spread the same way. |
+| C | One `live` or `from-export` input type in `@askdb/introspect` | Prisma has no live connection and no catalog templates, so it does not fit. |
+| D | Each engine package owns its SQL dialect | `ask()` must work with only core installed, and every engine package depends on core (ADR 0029). |
 
-- Multi-driver Postgres support (`postgres.js`, Neon HTTP) — deliberately deferred.
-- Plugin-style dialect/connector registries — the adapter object passed to `ask()` and the connector passed to `introspect()` is the registration mechanism for now.
-- Migration tooling from old to new layout — none ships; pre-1.0 break.
+## Keep
 
-## Related
+| Rule | Checked by |
+|---|---|
+| `@askdb/core` imports no database driver and no engine package. | review |
+| `ask()` has no option that takes a connection or runs SQL. | review |
+| `@askdb/introspect` has no default connector: `introspect()` uses the connector that its caller passes. | `packages/introspect/src/introspect.test.ts` |
+| `@askdb/introspect` names three source kinds (`url`, `fromExport`, `schemaPath`) and no engine's input type. | review |
 
-- Distribution spec: `docs/specs/distribution.md` (Postgres helper packaging — partially superseded).
-- Introspection spec: `docs/specs/introspection.md` (per-engine connector pattern — generalized).
-- Roadmap: "Phase 7.5 — Architecture reshape for integration packages."
-
-## Amendments
-
-**2026-10-09 — ADR 0008:** [ADR 0008](0008-engine-packages-and-connector-registry.md) supersedes this ADR's rule that integration packages own their SQL dialect (see the 2026-10 amendment below for where the specs live). It also adds the shared engine kit (`@askdb/introspect/kit`) and moves the connector registry into `@askdb/introspect`. The registry's connection names three source kinds a host can supply (`url`, `fromExport`, `schemaPath`), so `@askdb/introspect` now knows those three; what each means, and the connector input built from it, stay engine-owned. The rest of this ADR still holds: one package per engine, `Connector<TInput>` generic over an engine-owned input shape, and an engine-agnostic `@askdb/introspect`.
-
-**2026-10 — Dialect specs live in `@askdb/core`:** The first Decision bullet ("does not know what SQL dialect is being generated") and the rationale "Dialect is integration-package knowledge" no longer describe the code. The six built-in `DialectSpec`s live in `@askdb/core` (`packages/core/src/sql/dialect-spec.ts`) with their prompt briefs, forbidden keywords, blocked functions and, from #451, the reserved words the prompt quotes (`reservedWords`). Core also selects lexing and identifier quoting by `DialectSpec.id`. The engine packages re-export the specs and own their connectors, input shapes and catalog query runners. Core still imports no driver and executes no SQL. Two constraints hold the specs in core: `ask({ dialect: "postgres" })` works with only `@askdb/core` installed (documented in the core API reference), and every engine package depends on `@askdb/core`, so core can't take the specs from them without a dependency cycle. ADR 0007 lists moving `DialectSpec` out of core as out of scope. Whether this layering should change is evaluated in #464.
-
-**2026-11-05 — Superseded in part by [ADR 0029](0029-core-owns-built-in-dialect-specs.md):** #464 is decided. `@askdb/core` owns the built-in dialect specs and the SQL rules in them, and the engine packages own their drivers, connectors and catalog SQL and re-export the specs. ADR 0029 replaces three parts of this ADR: the first Decision bullet's "does not know what SQL dialect is being generated", the "own their dialect" in the integration-package bullet (which ADR 0008 had already superseded, without reasons), and the rationale "Dialect is integration-package knowledge". The decision text above is kept as written. The rest of this ADR still holds.
+Dialect rules are ADR 0029's. The registry and the engine kit are ADR 0008's.
