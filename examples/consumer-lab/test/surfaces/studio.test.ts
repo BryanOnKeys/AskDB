@@ -137,9 +137,9 @@ function expectRan(reply: StudioReply): void {
 /**
  * Contract: each launch generates a random token and injects it into the page it serves;
  * every `/api/*` call without the right token gets `403`, and each launch issues its own,
- * so a restart invalidates the old one (`studio.mdx`; ADR 0009: `<meta
- * name="askdb-studio-token">`, 256 bits, hex). Two launches side by side stand in for a
- * restart.
+ * so a restart invalidates the old one (`studio.mdx`; ADR 0009). The page carries it in
+ * `<meta name="askdb-studio-token">`, 256 bits, hex. Two launches side by side stand in for
+ * a restart.
  * Catches: a packed Studio that serves no token (the browser app then gets `403` on every
  * call), accepts a request without one, or accepts another launch's token (a fixed or
  * reused token, which a stale tab or another page could hold).
@@ -181,7 +181,7 @@ describe("[postgres] studio-token", () => {
 /**
  * Contract: Studio accepts only a `Host` of `localhost`, `127.0.0.1`, `[::1]` or the host
  * it was bound to, and only on its own port, on every request including the page; anything
- * else gets `403`, which blocks DNS rebinding (`studio.mdx`; ADR 0009, decision 1).
+ * else gets `403`, which blocks DNS rebinding (`studio.mdx`; ADR 0009).
  * Catches: a packed Studio that drops the Host check, applies it to `/api/*` but not to the
  * page (a rebound page could then read the token), ignores the port, or rejects the
  * loopback names the docs allow.
@@ -217,7 +217,7 @@ describe("[postgres] studio-host", () => {
 
 /**
  * Contract: Studio rejects state-changing API requests whose `Origin` points at another
- * site (`studio.mdx`; ADR 0009, decision 2: `403`).
+ * site (`studio.mdx`; ADR 0009: `403`).
  * Catches: a packed Studio whose only defense against a cross-site `POST /api/execute` is
  * the token, so a page that learned or guessed one (or a future token bug) could run SQL.
  * Not covered elsewhere: only `apps/studio`'s in-process server tests send a foreign
@@ -234,7 +234,7 @@ describe("[postgres] studio-origin", () => {
 
 /**
  * Contract: API requests whose body isn't `Content-Type: application/json` are rejected
- * with `415` (`studio.mdx`; ADR 0009, decision 2). ADR 0009's attack is exactly this: a
+ * with `415` (`studio.mdx`; ADR 0009). ADR 0009's attack is exactly this: a
  * `no-cors` `text/plain` `fetch` to `/api/execute` needs no CORS preflight.
  * Catches: a packed Studio that parses any body as JSON, which lets a simple cross-site
  * request through without the preflight Studio never answers.

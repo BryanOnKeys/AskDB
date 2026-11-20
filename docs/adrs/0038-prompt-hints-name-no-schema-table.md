@@ -1,46 +1,49 @@
-# ADR 0038 — The NL→SQL prompt's hints name no schema table
+# ADR 0038: Prompt hints name no schema table
 
-## Status
-
-Accepted (2026-11-06), for #677. The coordinator chose the option below in the #677 thread. Implemented in PR #804. Amended 2026-11-06 (#771): the tenant-policy block names only the tables the prompt shows (see Amendments).
-
-## Context
-
-`ask()` adds deterministic hints to the NL→SQL prompt when the question and the schema look misaligned (`nlToSqlAmbiguityNotes` in `packages/core/src/sql/schema-question-precheck.ts`). When the question seemed to name a table the schema doesn't have (`from X`, `join X`), the hint listed every table in `schema.tables`: `Known tables: hidden_payroll, orders.`
-
-That list named tables the prompt's DDL leaves out. A table marked `tracked: false` is excluded from the DDL and from retrieval (`docs/contracts/schema-v2.md`), and under retrieval the DDL holds only the retrieved tables, yet both kinds were listed. Their names reached the model provider. The trigger was common: "from last month" reads as a table named `last`. The single-table note also named its table, counting untracked ones.
-
-## Options considered
-
-- **List only the tables the prompt shows.** Tracked tables, and under retrieval only the retrieved ones. Rejected: the hint would need the retrieved table set on every call and must follow any later change to what the DDL holds, so each new way of narrowing the prompt is a new way to leak a name. The list would also only repeat the DDL above it.
-- **Name no schema table (chosen).** Drop the `Known tables:` list and the single-table note's table name. The DDL already lists every table the model may use, so the hint loses nothing the model needs.
+**Status:** accepted · 2026-11-06
 
 ## Decision
 
-The hints name no table from the schema. The note for an unknown name repeats only the word from the question: `The question mentions table "X" which is not in the schema.` The single-table note says `The schema lists only one table.` without naming it. Both count tracked tables only, so a question that names an untracked table gets the note, as for any name the prompt doesn't list.
+The NL→SQL prompt shows a table when the table is tracked and, under retrieval, when retrieval picked it. Text outside the DDL must not name a table that the prompt does not show.
 
-## Consequences
+The hints name no schema table at all. The note for an unknown name repeats only the word from the question. The note for a schema with one table does not name the table. Both notes count tracked tables only.
 
-- An untracked table's name, and a table retrieval left out, can't reach the model through the hints.
-- `nlToSqlAmbiguityNotes()` is exported, and its output is shorter (`@askdb/core` minor, upgrade guide `1.0.0-beta.50`).
-- Under retrieval, the unknown-name check still uses every tracked table, so a tracked table retrieval left out gets no note. That names nothing, and the model reads only the DDL.
-- The prompt's tenant-policy block was a separate path that named policy tables the DDL leaves out; the #771 amendment below closes it.
+The tenant-policy block names only the tables the prompt shows. Two cases keep what the model needs to write a tenant predicate:
 
-## Related
+| Case | The block |
+|---|---|
+| A root whose table the prompt does not show | Keeps the root's label and placeholder. Leaves out the table id and the root's own columns. |
+| A join path through an untracked table | Leaves the path out. With no path left, it tells the model not to read the scoped table. |
+| A join path through a tracked table that retrieval left out | Keeps the path, with that table's name and columns. |
 
-- `docs/contracts/schema-v2.md`: `tracked: false` excludes a table from prompt DDL and RAG indexing.
-- ADR 0026: every prompt follows `ask()`'s sensitive-omission rule.
-- #771: the tenant-policy block and untracked or unretrieved tables.
+## Why
 
-## Amendments
+- The hint listed every table in the schema. The names of untracked tables, and of tables retrieval left out, reached the model provider.
+- A list of only the shown tables must follow every later change to the DDL. Each new way to narrow the prompt is a new way to leak a name.
+- The DDL already lists every table the model can use, so the hint loses nothing.
+- Without a root's placeholder, or a path through a tracked table, the model cannot write the predicate, and the tenant check refuses the query.
 
-**2026-11-06 — The tenant-policy block names only the tables the prompt shows (#771):** `buildTenantPromptBlock` listed every root, scoped, polymorphic and global table in the policy, and every column holding a root's IDs, including tables marked `tracked: false` and, under retrieval, tables retrieval left out. `ask()` now passes the tables the prompt shows: the tracked ones, and under retrieval only the retrieved ones. The block leaves the others out. The coordinator settled two cases where leaving a table out would drop something the model needs:
+## Options
 
-- **A root whose table isn't shown keeps its label and placeholder (1A).** A tracked table's predicate compares its column with the root's placeholder (`orders.agency_id = :tenant_agency_ids`), so the model needs it. The root's table id and its own columns leave the block, except a root column that a kept join path reaches (below). The label is text the policy's author wrote for prompt assembly, and the placeholder is derived from it (`placeholderForTenantRoot`), so both reach the model by design. Rejected: dropping the root entirely, which would leave every tracked table scoped to it impossible to filter, so the tenant check would refuse every query on them.
-- **A join path through an untracked table is dropped; one through a tracked table retrieval left out stays (2A).** The author excluded an untracked table from prompts, so the scoped table loses that path, and the block tells the model not to read the table if no path is left. The tenant check still requires that table's predicate, so a query that reads it without one is refused. A tracked table that retrieval didn't pick is one the model may use, and dropping its path would drop the only predicate the model has for a retrieved table. So the path is printed with that table's name and columns, and the root column it reaches stays under the root's placeholder, since the path's predicate compares with it. Rejected: dropping the path in both cases, which refuses queries on retrieved tables when nothing untracked is involved.
+| | Option | Why it lost |
+|---|---|---|
+| A | The hints name no schema table, and the tenant block names only the shown tables | **Chosen.** |
+| B | The hints list only the tables the prompt shows | The list needs the retrieved table set on every call, and it only repeats the DDL above it. |
+| C | The tenant block drops a root whose table is not shown | No tracked table scoped to that root can be filtered, so the tenant check refuses every query on them. |
+| D | The tenant block drops every join path through a table that is not shown | It refuses queries on retrieved tables when no untracked table is involved. |
 
-Two more rules came out of the #814 review. Each column's table is looked up in the schema, not found by splitting the column id, since a table name can hold `#` (SQL Server): `table:dbo.Orders#Archive#AgencyId` belongs to `Orders#Archive`, not `Orders`. And a table the policy names as a root without declaring it (a `warn` policy's mapping or scope path) is named only when the prompt shows it; otherwise the block says "an undeclared root". A third came out of the #834 review: a scoped table's column path, and a polymorphic table's type and id columns, follow the join paths' rule, printed only when their table is tracked. They belong on the table itself, but the policy loader only checks that each column exists somewhere in the schema (#836), so a slip could have named an untracked table's column. With none left, the block tells the model not to read the table.
+## Keep
 
-ADR 0026's exception still holds for the tables the block does show: under omission it names their sensitive tenant columns, because the model needs them to filter. Under retrieval, a retrieved `tenant-policy` chunk is the policy file's prose as its author wrote it, and reaches the model as written.
+| Rule | Checked by |
+|---|---|
+| A hint names no table from the schema, and counts tracked tables only. | `packages/core/src/sql/schema-question-precheck.test.ts` |
+| The prompt names no untracked table, in a hint or in the tenant block. | `packages/core/src/ask.test.ts` |
+| Under retrieval, the hints and the tenant block name no table that retrieval left out, except on a join path a shown table needs. | `packages/core/src/ask.test.ts`, `packages/core/src/sql/tenant-prompt.test.ts` |
+| A root keeps its label and placeholder when its table is not shown. | `packages/core/src/sql/tenant-prompt.test.ts` |
+| A column path or a polymorphic column on an untracked table is left out, as a join path is. | `packages/core/src/sql/tenant-prompt.test.ts` |
+| The block finds a column's table in the schema, not by a split of the column id. | `packages/core/src/sql/tenant-prompt.test.ts` |
+| A root that the policy names but does not declare is named only when the prompt shows its table. | `packages/core/src/sql/tenant-prompt.test.ts` |
+| A caller that passes prebuilt DDL with a tenant policy must pass the ids of the shown tables, or the prompt builder throws. | `packages/core/src/sql/tenant-prompt.test.ts` |
+| Under omission, the block still names the sensitive tenant columns of the tables it shows (ADR 0026). | review |
 
-`buildTenantPromptBlock` takes the prompt's schema and, under retrieval, the retrieved table ids through a new argument, and works out the tracked and shown tables itself. The maintainer made it required (Q24 A), so a direct caller can't name a table the prompt leaves out by default. `buildNlToSqlUserPrompt` already takes the schema, so only the retrieved ids are new there. TypeScript can't make that last positional parameter required after the optional ones, so it's required at run time instead: with `prebuiltDdl` and a tenant policy, leaving the ids out throws, and so does a tenant policy with a v1 schema.
+A root's label is text that the policy's author wrote for the prompt, so it reaches the model by design. A retrieved `tenant-policy` chunk also reaches the model as its author wrote it.

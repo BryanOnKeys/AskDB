@@ -12,9 +12,9 @@ An ADR is a decision card that a reviewer reads in two minutes. The `domain-mode
 - **Size:** 350 words or fewer outside tables and the diagram, in plain English.
 - **Content:** the decision, not the behaviour. Function names, error codes and the issue-by-issue story live in the code, the tests and git.
 - **Changes:** a changed decision is a new ADR that supersedes the old one. A new case under the same decision is a test. An ADR has no dated amendment notes.
-- **Index:** the PR that adds, supersedes or rewords an ADR updates its row here, in 25 words or fewer.
+- **Index:** the PR that adds, supersedes or rewords an ADR updates its row here. The Keep cell has 25 words or fewer.
 
-ADRs 0010 and 0012 use this format. The others move to it as they are next edited (their rows here are already short).
+Every ADR uses this format. ADR 0034 is superseded and keeps its old text.
 
 ## Index
 
@@ -27,16 +27,16 @@ Numbering skips 0020.
 | [0003](0003-postgres-partition-handling.md) Postgres partition leaves are filtered out; the parent is the table | Accepted | Plain `INHERITS` children stay tables. Foreign keys to or from a partition leaf are dropped. |
 | [0004](0004-enrichment-package-boundary.md) `@askdb/enrich` is the headless authoring layer | Accepted | Authoring logic lives in `@askdb/enrich`, not in Studio or the CLI. Schema-directory file access is core's (ADRs 0027, 0028). |
 | [0005](0005-askdb-config-and-env-bootstrap.md) `@askdb/config` loads `.env` and `askdb.config.*` into one snapshot | Accepted | Only `@askdb/config` reads `process.env` (one exception: ADR 0036). Apps use `getAskDbRuntimeConfig()`. The HTTP server never reloads over a host's snapshot. |
-| [0006](0006-ai-provider-integration-strategy.md) Core is BYO-model; `@askdb/ai` owns the provider registry | Accepted | Core never depends on `@askdb/ai` or a provider SDK. Built-in providers and raw `LanguageModel`s are equal. Packages declare the `ai` and `zod` peers. |
+| [0006](0006-ai-provider-integration-strategy.md) Core is BYO-model; `@askdb/ai` owns the provider registry | Accepted | Core never depends on `@askdb/ai` or a provider SDK. Built-in providers and raw `LanguageModel`s are equal. A package that depends on core declares `ai`; the apps provide `zod`. |
 | [0007](0007-connector-registry.md) Apps dispatch through the connector registry | Accepted (the registry's home: ADR 0008) | Apps never switch on the engine themselves. |
-| [0008](0008-engine-packages-and-connector-registry.md) One package per engine; shared mechanics in `@askdb/introspect/kit` | Accepted | Don't copy kit helpers into an engine. Each engine writes its own driver `import()` with a chained `.catch()`. Never probe for a package through Node's resolver. |
+| [0008](0008-engine-packages-and-connector-registry.md) One package per engine; shared mechanics in `@askdb/introspect/kit` | Accepted | Don't copy kit helpers into an engine. Each engine writes its own driver `import()` with `.catch()`. Check for a package on disk, not through Node's resolver. |
 | [0009](0009-studio-local-api-protection.md) Studio's local API: Host allowlist, same-origin checks, a per-launch token | Accepted | The token proves same-origin, not identity. Keep the Host check, `no-store` and frame denial. |
 | [0010](0010-sql-guardrail-decision-point.md) One decision point for SQL guardrails, enforced at return and at rebind | Accepted | Only the decision point reads the modes. A rebind runs the tenant and sensitive checks again and takes tenant IDs from the scope. |
 | [0011](0011-connection-labels-from-parsed-parts.md) Connection labels are built from parsed parts | Accepted | Never build a label by masking the raw string. Adapters return parts, never label text. |
 | [0012](0012-sql-checks-are-defense-in-depth.md) SQL checks are a lint; the database is the security boundary | Accepted | Docs never call the checks a security boundary. A form a check can't read as the engine does is refused, not modelled. |
 | [0013](0013-table-filename-scheme.md) A table's file is `<table>.md`, or `<schema>.<table>.md` on a collision | Accepted | Pair files with tables by front-matter `id`, never by filename. Write only through `saveSchemaFile()`. |
 | [0014](0014-subtree-scope-expands-per-root.md) A `subtree` scope expands per root, in core | Accepted | Never fold a subtree into one ID list or drop an empty level. Each root keeps its own placeholder. |
-| [0015](0015-published-ranges-move-on-purpose.md) Published ranges move on purpose | Accepted | A floor rises by hand, named in a changeset. Raising an `ai` or `@ai-sdk/openai` floor raises the consumer lab's pin. |
+| [0015](0015-published-ranges-move-on-purpose.md) Published peer ranges move only on purpose | Accepted | A peer floor rises by hand, named in a changeset. Raising an `ai` or `@ai-sdk/openai` floor raises the consumer lab's pin. Own dependencies can follow the latest. |
 | [0016](0016-ai-config-connections-and-model-sections.md) AI config: connections in `providerConfig`, the model choice in `language` and `embedding` | Accepted | One place per provider secret. No layer picks an embedding model or keeps a table of model widths. |
 | [0017](0017-sensitive-mentions-schema-wide.md) Sensitive mentions are checked against one schema-wide list | Accepted | Don't scope the check per table. Match a table-inherited column only as `table.column`. |
 | [0018](0018-ask-keeps-the-trailing-semicolon.md) `ask()` keeps one trailing semicolon | Accepted | Core doesn't reshape the statement. Any other `;` throws. Remove the terminator with `/;$/`, never a pattern that starts `\s*`. |
@@ -58,7 +58,7 @@ Numbering skips 0020.
 | [0035](0035-the-1-0-set-releases-as-one-version.md) The 1.0 set releases as one version | Accepted | Don't change the `fixed` group without ADR 0030. Don't hand-set prerelease versions. Studio, enrich and rag never get a `major`. |
 | [0036](0036-model-base-urls-with-credentials-are-refused.md) Model base URLs with credentials are refused | Accepted | No message repeats the URL. A new built-in provider builds its options through `baseURLOption()`. |
 | [0037](0037-introspection-refuses-an-empty-artifact.md) Introspection refuses an empty artifact | Accepted | Never write a `schema.json` with no tables. The message never names the connection. |
-| [0038](0038-prompt-hints-name-no-schema-table.md) Prompt hints name no schema table | Accepted | Never list a table the prompt's DDL leaves out, in a hint or in the tenant block. |
+| [0038](0038-prompt-hints-name-no-schema-table.md) Prompt hints name no schema table | Accepted | Hints name no schema table. The tenant block names no untracked table, and a table retrieval left out only on a join path. |
 | [0039](0039-http-api-refuses-a-schema-it-cant-serve.md) `askdb-http` refuses a schema it can't serve | Accepted | Never fall back to PostgreSQL for an unknown engine. Don't blame the caller for the server's schema. |
 | [0040](0040-approving-the-version-pr-is-the-release-approval.md) Approving the Version PR is the release approval | Accepted | An agent never approves the Version PR. No publish path skips the approval or the version check. |
 | [0041](0041-docs-diagrams-are-mermaid-rendered-by-pele.md) Docs diagrams with no actors are Mermaid, rendered by pele | Accepted (supersedes 0034) | No diagram tool that needs a binary or a browser in CI, or ships JavaScript. A diagram that can't render fails the build. |
@@ -70,6 +70,6 @@ Numbering skips 0020.
 | [0047](0047-studio-suggest-drafts-inline.md) Studio Suggest drafts inline | Accepted | Show the call count before bulk drafting. Write no draft before **Use** and **Save**. Send no sensitive column under omission. |
 | [0048](0048-a-declined-question-throws.md) A declined question throws | Accepted | Never return SQL for a reply that declines. The decline doesn't move to a result field. |
 | [0049](0049-quickstart-offers-a-fetchable-example.md) The Quickstart offers a fetchable example, kept equal to the page | Accepted | Don't commit generated files or add the folder to the workspace. Change the example with the page. |
-| [0050](0050-docs-pages-are-markdown-first-with-a-markdown-twin.md) Docs pages are Markdown first, and each has a Markdown twin | Accepted | No layout HTML in a page. No color or font outside `tokens.css`. No font or script from another host. |
+| [0050](0050-docs-pages-are-markdown-first-with-a-markdown-twin.md) Docs pages are Markdown first, and each has a Markdown twin | Accepted | No layout HTML in a page. No color or font outside `tokens.css`. No font from another host. |
 | [0051](0051-docs-diagrams-are-askdbs-own.md) Docs flows and sequences are drawn from a `diagram` fence | Accepted | No coordinate or color in a diagram. No diagram JavaScript. A diagram that can't be drawn fails the build. |
 | [0052](0052-scripted-replays-live-in-a-private-e2e-package.md) Scripted replays live in a private `e2e` package | Accepted | Replays use the fake model and role-and-name locators. Journeys stay in one package. The task stays uncached. |

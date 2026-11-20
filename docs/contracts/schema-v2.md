@@ -285,7 +285,7 @@ Every chunk id is scoped to the schema: `chunk:<schemaId>:<local-id>` (e.g. `chu
 | **Tenant policy** | `tenant-policy#<section-slug>` | one H2 section of `tenant-policy.md` (see [`tenant-policy.md`](./tenant-policy.md)). |
 | **Relationship** (optional) | `<from-id>-><to-id>` | natural-language summary: `Relationship: <from-table>.<from-col> references <to-table>.<to-col>`. |
 
-A business-context chunk has `type: "table"`, like the table's own chunk. The retrieval prompt (`synthesizeRetrievedDdl`) tells them apart by the `#biz` id above and lists the chunk's body under its table, so that id is part of the contract. A column's note reaches both prompts from the schema's `note`, in the column's annotation, where the omission gate checks it with the annotation as one unit; the column chunk's `Note: ` line only feeds retrieval ([ADR 0042](../adrs/0042-retrieval-prompt-reads-business-context-by-chunk-id.md), amended for #898).
+A business-context chunk has `type: "table"`, like the table's own chunk. The retrieval prompt (`synthesizeRetrievedDdl`) tells them apart by the `#biz` id above and lists the chunk's body under its table, so that id is part of the contract. A column's note reaches both prompts from the schema's `note`, in the column's annotation, where the omission gate checks it with the annotation as one unit; the column chunk's `Note: ` line only feeds retrieval ([ADR 0042](../adrs/0042-retrieval-prompt-reads-business-context-by-chunk-id.md), #898).
 
 ### Determinism
 

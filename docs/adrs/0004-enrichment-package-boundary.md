@@ -1,77 +1,43 @@
-# ADR 0004 — Enrichment-package boundary
+# ADR 0004: `@askdb/enrich` is the headless authoring layer
 
-## Status
-
-Accepted (amended 2026-11).
-
-> **Amendment (2026-11):** `@askdb/core` now owns file access to a schema directory: `readSchemaDirectory()` reads one ([ADR 0027](0027-core-reads-schema-directory-with-exact-names.md)), and `saveSchemaFile()` writes a file into one ([ADR 0028](0028-core-writes-schema-directory-files.md)). Which files a directory holds, and how a file is written there, are tenant-safety rules: copies in two packages drifted and failed open (#181, #608, #617). `@askdb/enrich` keeps the authoring workflow (`Workspace`, drafts, the `save*` helpers, `bundleSchemaDirectory()`) and calls core for the file access. Core still holds no authoring workflow.
-
-> **Amendment (2026-07):** `@askdb/tui` has since been retired in favor of Studio; `askdb enrich` opens Studio and `askdb bundle` calls `@askdb/enrich` directly. The boundary this ADR established is unchanged — `@askdb/enrich` remains the shared headless authoring layer consumed by `@askdb/studio` and custom surfaces. TUI references below are preserved as historical context.
-
-## Context
-
-Phase 7 introduced `@askdb/tui` as the first authoring surface for the Schema v2 describable layer. Its implementation included both terminal UI code and reusable enrichment workspace logic:
-
-- loading a Schema v2 workspace from disk
-- building editable table drafts from parsed markdown
-- saving `tables/*.md` and `concepts.md`
-- preserving markdown sections while editing descriptions and common query language
-- building AI suggestion targets and context
-- bundling a split Schema v2 directory into a single JSON artifact
-
-When `@askdb/studio` was added, it needed the same non-UI enrichment behavior. Depending directly on `@askdb/tui` made the browser/server Studio package depend on a terminal UI package, which blurred product boundaries and risked pulling UI-specific dependencies into non-terminal consumers.
+**Status:** accepted · 2026-05-12
 
 ## Decision
 
-Create `@askdb/enrich` as the shared, headless enrichment workspace package.
+`@askdb/enrich` holds the authoring logic for a schema directory, and it has no UI. It loads a workspace, builds table drafts, and saves table, concept and tenant-policy files. It also builds the context for AI suggestions and bundles a directory into one JSON artifact.
 
-The dependency direction is:
+Studio and `askdb bundle` call it. A host can build its own authoring UI on it.
 
-```text
-@askdb/core
-   ^
-   |
-@askdb/enrich
-   ^          ^
-   |          |
-@askdb/tui   @askdb/studio
+`@askdb/enrich` depends on `@askdb/core` only. Core holds the schema contract and the rules for file access to a schema directory (ADRs 0027, 0028). Core holds no authoring workflow.
+
+## Why
+
+- A second authoring UI needed the logic that the first one held. To reuse it, one UI package had to depend on the other.
+- Authoring is a workflow over files. It is not part of the schema contract or of NL-to-SQL, so it stays out of core.
+- Two copies of the file-access rules drifted apart and failed open. Those rules now have one owner: core.
+
+```mermaid
+flowchart LR
+  studio["@askdb/studio"] -->|depends on| enrich["@askdb/enrich<br/>(authoring logic)"]
+  cli["askdb bundle"] -->|depends on| enrich
+  custom["A host's own<br/>authoring UI"] -->|depends on| enrich
+  enrich -->|depends on| core["@askdb/core<br/>(schema contract, file access)"]
 ```
 
-`@askdb/enrich` owns reusable Schema v2 enrichment authoring logic:
+## Options
 
-- `Workspace`, `WorkspaceTable`, and workspace loading
-- table draft construction and front-matter construction
-- table/concepts persistence helpers
-- markdown body section update helpers
-- suggestion source, target, and context helpers
-- split-directory bundling
+| | Option | Why it lost |
+|---|---|---|
+| A | A separate headless package between core and the UIs | **Chosen.** |
+| B | Keep the logic in a UI package | Every other surface then depends on that UI's dependencies, and one package is both an app and a shared library. |
+| C | Move the logic into core | It is an authoring workflow, not the schema or NL-to-SQL contract, and core must stay small. |
 
-`@askdb/tui` owns terminal interaction, keyboard flows, Ink components, and the `askdb-tui` binary.
+## Keep
 
-`@askdb/studio` owns the local browser UI and HTTP routes.
-
-`@askdb/core` remains the schema contract and NL-to-SQL core: Schema v2 types, parsing/writing primitives, validation, prompt assembly, AI contracts, logging, modes, and `ask()`.
-
-## Consequences
-
-- Studio no longer depends on TUI.
-- TUI and Studio share one implementation for Schema v2 enrichment workspace behavior.
-- Core avoids becoming a catch-all for filesystem authoring workflows. (Amended 2026-11: core does own reading and writing the files of a schema directory, ADRs 0027 and 0028.)
-- `@askdb/enrich` becomes a published API surface for consumers who want to build their own authoring UI without adopting the terminal UI or Studio.
-- Existing `@askdb/tui` helper exports may continue to re-export from `@askdb/enrich` for compatibility, but new consumers should import shared enrichment helpers from `@askdb/enrich`.
-
-## Alternatives Considered
-
-### Keep shared helpers in `@askdb/tui`
-
-Rejected. This keeps Studio coupled to a terminal UI package and makes `@askdb/tui` both an application surface and a shared domain library.
-
-### Move shared helpers into `@askdb/core`
-
-Rejected for now. The moved logic is authoring workflow and filesystem workspace behavior, not the core schema/NL-to-SQL contract. Keeping it outside Core preserves a smaller runtime-neutral core package.
-
-## References
-
-- [`docs/platform.md`](../platform.md) — package layout
-- [`docs/contracts/schema-v2.md`](../contracts/schema-v2.md) — Schema v2 implementation locus
-- [`docs/specs/schema-authoring-and-enrichment.md`](../specs/schema-authoring-and-enrichment.md) — enrichment authoring feature spec
+| Rule | Checked by |
+|---|---|
+| Authoring logic lives in `@askdb/enrich`. Studio and the CLI do not copy it. | review |
+| `@askdb/enrich` depends on `@askdb/core` and on no app or UI package. | review |
+| A save from `@askdb/enrich` into a schema directory goes through core's `saveSchemaFile()`. | `packages/enrich/src/workspace.test.ts` |
+| `bundleSchemaDirectory()` refuses each directory that core's loader refuses. | `packages/enrich/src/workspace.test.ts` |
+| Core holds no authoring workflow. | review |
