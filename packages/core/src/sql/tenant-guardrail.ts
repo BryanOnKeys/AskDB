@@ -803,7 +803,7 @@ function inOrderOrGroupBy(text: string, start: number, end: number): boolean {
   if (word === "order" || word === "group") return /^\s+by(?![\w$\u0080-\uffff])/i.test(text.slice(end));
   if (word !== "by") return false;
   const before = /(?:order|group)\s+$/i.exec(text.slice(0, start));
-  // oxlint-disable-next-line no-control-regex -- \u0001 is the lexer's placeholder character.
+  // oxlint-disable-next-line no-control-regex -- \u0001 is QUOTE_MARK, the placeholder for a quoted identifier's delimiters.
   if (before === null || /[\w$\u0080-\uffff\u0001]/.test(text[before.index - 1] ?? "")) return false;
   return !afterDot(before.index);
 }
