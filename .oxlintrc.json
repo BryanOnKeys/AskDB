@@ -4,6 +4,9 @@
   "categories": {
     "correctness": "error"
   },
-  "jsPlugins": [],
-  "rules": {}
+  "jsPlugins": ["./scripts/oxlint/askdb-comments.mjs"],
+  "rules": {
+    "askdb/deferred-work-names-an-issue": "error",
+    "askdb/adr-citation-resolves": "error"
+  }
 }
