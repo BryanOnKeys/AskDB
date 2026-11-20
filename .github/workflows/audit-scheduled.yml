@@ -1,0 +1,118 @@
+name: Dependency audit (scheduled)
+
+# CI's `audit` job runs only when a PR or push changes a dependency file, so a new advisory
+# against a dependency already on `main` would go unseen there. This runs the same audit on
+# `main` every day. When it fails, it opens an issue, or comments on the open one with the
+# same title, so failures never pile up as duplicates. See CONTRIBUTING.md, "Dependency Audit".
+on:
+  schedule:
+    # 06:23 UTC daily: off the top of the hour, when scheduled runs queue the longest.
+    - cron: "23 6 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: audit-scheduled
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      failed: ${{ steps.result.outputs.failed }}
+      advisories: ${{ steps.result.outputs.advisories }}
+      log: ${{ steps.result.outputs.log }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `shell: bash` adds pipefail, so the step fails when the audit does.
+      - name: Audit dependencies
+        id: audit
+        shell: bash
+        run: pnpm run audit 2>&1 | tee "$RUNNER_TEMP/audit.log"
+
+      # Passes the advisory links and the end of the log (colors stripped) to `report`.
+      - name: Record the failure
+        id: result
+        if: failure() && steps.audit.outcome == 'failure'
+        run: |
+          sed -E 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/audit.log" | tail -n 150 > "$RUNNER_TEMP/audit-tail.log"
+          delimiter="EOF_$(openssl rand -hex 16)"
+          {
+            echo "failed=true"
+            echo "advisories<<$delimiter"
+            grep -oE 'https://github\.com/advisories/GHSA(-[a-z0-9]{4}){3}' "$RUNNER_TEMP/audit.log" | sort -u || true
+            echo "$delimiter"
+            echo "log<<$delimiter"
+            cat "$RUNNER_TEMP/audit-tail.log"
+            echo "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+
+  # A separate job, so the token that can write issues never sits in a job that runs
+  # dependency code (`pnpm install`, audit-ci). Reports only for `main`: a manual run on
+  # another branch fails without an issue.
+  report:
+    needs: audit
+    if: failure() && needs.audit.outputs.failed == 'true' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the audit-failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TITLE: "Dependency audit fails on main"
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CONTRIBUTING_URL: ${{ github.server_url }}/${{ github.repository }}/blob/main/CONTRIBUTING.md#dependency-audit
+          ADVISORIES: ${{ needs.audit.outputs.advisories }}
+          LOG: ${{ needs.audit.outputs.log }}
+        run: |
+          body="$RUNNER_TEMP/body.md"
+          {
+            echo "The [scheduled dependency audit]($RUN_URL) failed on \`main\` ($(date -u +%Y-%m-%d))."
+            echo
+            if [ -n "$ADVISORIES" ]; then
+              echo "Advisories at moderate severity or higher:"
+              echo
+              printf '%s\n' "$ADVISORIES" | sed 's/^/- /'
+            else
+              echo "The output names no advisory; the audit itself may have failed. See the run's log."
+            fi
+            echo
+            echo "To fix it, use the \`repair-dependency-audit\` skill and follow [CONTRIBUTING.md, \"Dependency Audit\"]($CONTRIBUTING_URL): prefer a lockfile refresh or an override to an allowlist entry. CI's \`audit\` job runs on the fixing PR, because it changes a dependency file."
+            echo
+            echo "<details><summary>End of the audit output</summary>"
+            echo
+            echo '~~~~text'
+            printf '%s\n' "$LOG" | sed 's/^~~~~/ ~~~~/'
+            echo '~~~~'
+            echo
+            echo "</details>"
+          } > "$body"
+
+          number="$(gh issue list --state open --search "\"$TITLE\" in:title" --json number,title \
+            --jq 'map(select(.title == env.TITLE)) | .[0].number // empty')"
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body-file "$body"
+          else
+            gh issue create --title "$TITLE" --label dependencies --label needs-triage --body-file "$body"
+          fi
