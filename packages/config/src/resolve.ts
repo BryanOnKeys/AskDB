@@ -549,15 +549,18 @@ function readRequestTimeoutMs(value: unknown, key: string): number | undefined {
 /**
  * `httpApi.listen.port`: `undefined` when unset or `NaN` (`Number(env("PORT"))` with `PORT`
  * unset), as Studio does for `studio.listen.port`. Port `0` asks the OS for a free port. Anything
- * but an integer from 0 to 65535, or a string holding one, fails.
+ * but an integer from 0 to 65535, or a string of decimal digits holding one, fails.
  */
 function readListenPort(value: unknown, key: string): number | undefined {
   if (value === undefined || (typeof value === "number" && Number.isNaN(value))) return undefined;
   const text = typeof value === "string" ? value.trim() : undefined;
-  // `Number("")` is 0, so a blank string is checked before it's converted.
-  const port = typeof value === "number" ? value : text ? Number(text) : NaN;
+  // Only ASCII decimal digits, like the `askdb-http --port` flag (#1024): `Number("0x50")` is 80
+  // and `Number("1e3")` is 1000, so a loose conversion would bind a different port than written.
+  const port = typeof value === "number" ? value : text && /^[0-9]+$/.test(text) ? Number(text) : NaN;
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
-    throw new Error(`askdb.config: invalid ${key} ${describeValue(value)} (expected an integer from 0 to 65535).`);
+    throw new Error(
+      `askdb.config: invalid ${key} ${describeValue(value)} (expected a number, or a string of decimal digits, holding an integer from 0 to 65535).`,
+    );
   }
   return port;
 }

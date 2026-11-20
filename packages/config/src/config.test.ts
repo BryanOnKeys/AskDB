@@ -1265,8 +1265,23 @@ describe("getAskDbRuntimeConfig — httpApi", () => {
     }
   });
 
+  it("trims whitespace around a listen.port string but still requires decimal digits inside", () => {
+    for (const [port, expected] of [
+      ["\n3000\n", 3000],
+      ["\t 80 ", 80],
+      [" 080 ", 80],
+    ] as const) {
+      install({ listen: { port } as unknown as NonNullable<AskDbConfig["httpApi"]>["listen"] });
+      expect(getAskDbRuntimeConfig().httpApi.listen.port).toBe(expected);
+    }
+    for (const port of [" 0x50 ", "\n1e3\n", " +80 ", "8 0"]) {
+      const httpApi = { listen: { port } } as unknown as AskDbConfig["httpApi"];
+      expect(() => defineConfig(minimalConfig({ httpApi }))).toThrow(/askdb\.config: invalid httpApi\.listen\.port/);
+    }
+  });
+
   it("rejects any other listen.port when the config loads, naming the key", () => {
-    for (const port of [65536, 70000, -1, 1.5, Infinity, "abc", "", "80.5", true, null]) {
+    for (const port of [65536, 70000, -1, 1.5, Infinity, "abc", "", "80.5", true, null, "0x50", "1e3", "+80", "80.0", "0b1010"]) {
       const httpApi = { listen: { port } } as unknown as AskDbConfig["httpApi"];
       expect(() => defineConfig(minimalConfig({ httpApi }))).toThrow(/askdb\.config: invalid httpApi\.listen\.port/);
     }
