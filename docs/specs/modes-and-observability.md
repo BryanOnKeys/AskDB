@@ -28,7 +28,7 @@ Operating modes define what data may reach the model and what the pipeline is al
 
 ## Design decisions
 
-- **Pino over Winston or consola** — JSON-lines-first, multi-target via official transports, fast on hot paths. See [ADR 0001](../adrs/0001-structured-logging-pino.md) for full alternatives analysis.
+- **Pino over Winston or consola** — JSON-lines-first, several targets through `pino.multistream`, fast on hot paths. See [ADR 0001](../adrs/0001-structured-logging-pino.md) for the options that lost.
 - **stdout for results, stderr for logs** — CLI result output (SQL, tabular rows) goes to stdout; diagnostic logs default to stderr. This keeps piping predictable.
 - **Stable event taxonomy** — event names (`askdb.pipeline.started`, `askdb.pipeline.generation_completed`, etc.) are a versioned contract. Additive events are allowed; renames are breaking.
 - **Sensitive identifiers included by default** — identifiers are needed for NL→SQL grounding; omitting them by default degrades SQL quality. The `omitSensitiveIdentifiersFromPrompt` option enables stricter deployments. Describable-layer fields (descriptions, aliases) are always excluded for sensitive columns regardless of this flag.

@@ -63,7 +63,7 @@ Rules a diff can break and a reviewer can check, each with its source. Read `AGE
 
 ### Decision records
 
-- Records: `docs/adrs/NNNN-title.md`. The format is in `docs/adrs/README.md`, "Writing an ADR": Status, Decision, Why, Options and Keep, in 350 words or fewer outside tables and the diagram. ADRs not yet rewritten still have Status, Context, Decision, Alternatives and Consequences. Numbering skips 0020.
+- Records: `docs/adrs/NNNN-title.md`. The format is in `docs/adrs/README.md`, "Writing an ADR": Status, Decision, Why, Options and Keep, in 350 words or fewer outside tables and the diagram. Numbering skips 0020.
 - Index: `docs/adrs/README.md`, one row per ADR: its status and the rule it leaves. Start there, then read each ADR whose rule touches the changed paths.
 - Needs a record: any choice between two or more clean options, any reversal of an accepted record. A change that contradicts an ADR supersedes it with a new ADR in the same PR (`docs/agents/domain.md`, "Flag ADR conflicts").
 - A new or edited record is a finding when it holds behaviour (function names, error codes, an issue-by-issue story), adds a dated amendment note, or has a Keep rule that names no test and doesn't say `review`.

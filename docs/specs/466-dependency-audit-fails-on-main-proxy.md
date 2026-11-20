@@ -97,5 +97,5 @@ Contributors and CI get a green audit again. The build stage installs the branch
 
 **2026-11-01 (#586):** `@azure/identity` 4.14.1 (published 2026-10-29) depends on `@azure/msal-node` ^7.1.0, so decision 2's parent-bump branch applied and the msal-node allowlist entries and CONTRIBUTING.md rows came out. pnpm doesn't move a transitive-only dependency on `pnpm update`, so the bump is an `overrides` entry (`"@azure/identity": ^4.14.1`) that moves the parent, not `@azure/msal-node` itself, which is still never overridden to `^7.1.0`. The paragraph above that rules out an override describes the then-latest `@azure/identity` 4.14.0, which asked for `^6.0.0`.
 
-**2026-11-01 (#586):** decision 4 and the published-ranges paragraph predate the 2026-10 amendment to ADR 0015 (#470), which lets a package's own dependency ranges, runtime and dev, follow the latest version with a changeset. `zod` in `@askdb/core` now moves with the rest; peer ranges and the `ai` ranges are still held.
+**2026-11-01 (#586):** decision 4 and the published-ranges paragraph predate today's ADR 0015 (#470), which lets a package's own dependency ranges, runtime and dev, follow the latest version with a changeset. `zod` in `@askdb/core` now moves with the rest; peer ranges and the `ai` ranges are still held.
 

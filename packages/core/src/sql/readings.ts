@@ -1,6 +1,6 @@
 /**
  * How each SQL check reads a statement, per dialect: the lexer readings it must pass under. This
- * module is the one place that decides them (#815, ADR 0010's stage (c), "one shared analysis"),
+ * module is the one place that decides them (#815, ADR 0010),
  * and {@link readSql} lexes each reading once per statement, so a reading changes in one place.
  * The checks stay heuristics (ADR 0012).
  *
