@@ -22,4 +22,4 @@ Private vulnerability reporting is the front door for every report, check misses
 
 ## Published advisories
 
-The 12 advisories published before 2026-11-11 keep their text and severity, including the 10 tenant-check misses published under the earlier rule. Leave them as written. Their record lives in `SECURITY.md` and the docs site's upgrade notes. Other docs-site pages describe current behavior and don't cite them ([ADR 0046](../adrs/0046-a-vulnerability-is-a-break-in-something-askdb-owns.md)'s 2026-11-14 amendment).
+The 12 advisories published before 2026-11-11 keep their text and severity, including the 10 tenant-check misses published under the earlier rule. Leave them as written. Their record lives in `SECURITY.md` and the docs site's upgrade notes. Other docs-site pages describe current behavior and don't cite them ([ADR 0046](../adrs/0046-a-vulnerability-is-a-break-in-something-askdb-owns.md)).

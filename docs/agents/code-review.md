@@ -43,6 +43,7 @@ Rules a diff can break and a reviewer can check, each with its source. Read `AGE
 - Unimplemented plans, specs and doc/behavior discrepancies go to GitHub Issues, not new files in the repo (`AGENTS.md`, "Agent skills", "Issue tracker")
 - Domain terms are used as `CONTEXT.md` and `docs/contracts/` define them (`docs/agents/domain.md`)
 - Markdown and MDX use one line per paragraph or list item, with no hard wraps in prose (`AGENTS.md`, "Conventions")
+- **A comment explains; it never grants an exception.** A comment that says code skips, defers or leaves out a case on purpose names the ADR or issue that decided it. Open that ADR or issue: when it doesn't say what the comment claims, the comment is a finding, and so is the gap it excuses. An ADR that calls the SQL checks a lint (ADR 0012) excuses no check miss: ADR 0046 still fixes each one. A rule that matters has a test; a comment alone doesn't hold it (maintainer's decision, 2026-11-19)
 - **Enforced by tooling:** `pnpm lint` (oxlint over the whole repo with warnings denied, with AskDB's two comment rules from `scripts/oxlint/askdb-comments.mjs`: a comment that puts work off in one of a fixed list of wordings (`for now`, `workaround`, `TODO` and the like) names an issue or ADR, and an ADR a comment cites is in the index as Accepted; a comment that puts work off in other words passes the tool, so still read for it, and whether the issue or ADR says what the comment claims is yours to check; then each package's `tsc --noEmit`, Studio's `tsconfig.web.json` typecheck, the docs site's `astro check`); `pnpm run audit` (moderate or higher advisories, stale allowlist entries); the Changesets workflow (a changeset exists when a non-test file under `packages/*/src` or `apps/{cli,http-api,studio}/src`, or a manifest outside `devDependencies`, changes, but not its bump level, and not for `apps/docs-site`; test files (`*.test.*`, `*.spec.*`, `__tests__/`, `__snapshots__/`, `test-utils.ts`) are exempt, per `scripts/publishable-paths.sh`); the consumer-lab job's frozen-lockfile check of the lab's manifest against its lockfile; `pnpm test:ai-floors` (AI SDK peer floors); `pnpm smoke:install` and the publish dry-run; React Doctor on PRs. There is no formatter.
 - **Smell baseline:** applies by default. Endorsed here: `@askdb/config`'s own provider list duplicating `BUILTIN_AI_PROVIDERS`, guarded by a drift test in `@askdb/client` (`docs/architecture.md`, "Dependency boundaries"); and a schema v2 contract rule copied in core and a package above it because sharing it would need a new core export, guarded by a parity test (Architecture, "One owner for a schema v2 contract rule").
 
@@ -62,10 +63,11 @@ Rules a diff can break and a reviewer can check, each with its source. Read `AGE
 
 ### Decision records
 
-- Records: `docs/adrs/NNNN-title.md`, each with Status, Context, Decision, Alternatives and Consequences. Numbering skips 0020.
-- Index: `docs/adrs/README.md`, one row per ADR: its status, the decision, and what not to regress. Start there, then read the Status, Decision and amendments of each ADR whose row touches the changed paths.
-- Needs a record: any choice between two or more clean options, any reversal of an accepted record. A change that contradicts an ADR amends or supersedes it in the same PR (`docs/agents/domain.md`, "Flag ADR conflicts").
-- A new record adds its row to the index in the same PR, and an amendment updates the row's status and summary.
+- Records: `docs/adrs/NNNN-title.md`. The format is in `docs/adrs/README.md`, "Writing an ADR": Status, Decision, Why, Options and Keep, in 350 words or fewer outside tables and the diagram. Numbering skips 0020.
+- Index: `docs/adrs/README.md`, one row per ADR: its status and the rule it leaves. Start there, then read each ADR whose rule touches the changed paths.
+- Needs a record: any choice between two or more clean options, any reversal of an accepted record. A change that contradicts an ADR supersedes it with a new ADR in the same PR (`docs/agents/domain.md`, "Flag ADR conflicts").
+- A new or edited record is a finding when it holds behaviour (function names, error codes, an issue-by-issue story), adds a dated amendment note, or has a Keep rule that names no test and doesn't say `review`.
+- A new record adds its row to the index in the same PR, and a superseded or reworded one updates its row.
 
 ## Defects
 

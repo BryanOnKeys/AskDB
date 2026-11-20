@@ -12,9 +12,8 @@
  * second AI SDK for AskDB. A runtime `ai` range (the apps) raised alone gives AskDB a
  * second AI SDK with no peer warning, so every AskDB package must declare the same `ai`
  * range for the host's AI SDK major: the one the peer check holds the host's pin to.
- * `@askdb/core` and `@askdb/rag` also accept AI SDK 6 (`^6.0.0 || ^7.0.51`, ADR 0006's
- * 2026-09 amendment), so the check compares the part of each range that covers the
- * host's major, not the whole range.
+ * `@askdb/core` and `@askdb/rag` also accept AI SDK 6 (`^6.0.0 || ^7.0.51`, ADR 0006), so the
+ * check compares the part of each range that covers the host's major, not the whole range.
  * Not covered elsewhere: the workspace's own tests resolve `ai` from its lockfile, at the
  * newest version, so they pass whatever the floor says, and `pnpm smoke:install` pins only
  * the AI SDK 6 floor (its `consumer-ai6` fixture); its AI SDK 7 consumers install whatever

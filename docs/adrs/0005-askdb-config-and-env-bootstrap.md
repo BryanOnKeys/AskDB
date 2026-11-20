@@ -1,75 +1,72 @@
-# ADR 0005 — AskDB config package and env bootstrap
+# ADR 0005: `@askdb/config` loads `.env` and `askdb.config.*` into one snapshot
 
-## Status
-
-Accepted.
-
-> **Amendment (2026-09):** `@askdb/config` also renders the `ai` block of a new `askdb.config.ts`: `renderAskDbAiConfigScaffold`, on the `@askdb/config/scaffold` entry point, which both `askdb init` and Studio's setup wizard call. Before this, each app kept its own copy of the template with a "keep the two in sync" comment, and neither wrote Azure's required `resourceName`, so a config-only Azure or Foundry setup failed at startup. Options considered: keep both copies and add a test that fails when they differ (the duplication stays, and the test has to live in one app and import the other); move the template into `@askdb/ai` (it owns provider knowledge, but not the config file's shape, and it has no dependency on `@askdb/config`); or move it into `@askdb/config`. `@askdb/config` won because it owns `AskDbConfig`, including the rule that `AzureConfig` / `FoundryConfig` need `resourceName` or `baseUrl`, and both apps already depend on it. The renderer is on a `./scaffold` subpath, not the main entry that user configs import, so scaffolding helpers can change without touching the config API; plan 066 (#353) puts its shared setup helpers there too. Callers pass the API key and model env var names, and the default names stay with the apps. The rest of each app's template (introspection, RAG, Studio sections) is unchanged.
-
-> **Amendment (2026-10):** With the four adapters folded into `@askdb/ai` (ADR 0006, 2026-09 amendment), `askdb init` and Studio take each provider's default API key and model env var names from `@askdb/ai`'s built-in provider table (`getBuiltinAiProviderSetup`), which owns the providers' native env vars, and drop their `AI_DEFAULTS` copies. The renderer stays in `@askdb/config/scaffold` and still takes the names from its callers, so `@askdb/config` gains no dependency on `@askdb/ai`.
-
-> **Amendment (2026-10, #346):** `@askdb/rag` no longer depends on `@askdb/config`. Only its bundled `askdb-rag` CLI read config, and that CLI moved into the `askdb` app as `askdb rag`, which reads config and passes plain values to the library. No library package calls `getAskDbRuntimeConfig()` now: a library that needs AskDB settings takes them from its host, as `@askdb/client` takes a runtime snapshot. Rule 6 and the consequence below still hold for any library that does read config: it goes through `getAskDbRuntimeConfig()`, never `process.env`.
-
-> **Amendment (2026-11, #280):** `createAskDbHttpServer()`, the embeddable factory of the `@askdb/http-api` app, bootstraps config itself when it is built and no runtime snapshot is installed. It calls `bootstrapAskDbEnv()` from the working directory, as the `askdb-http` binary does, and throws when it finds no config or can't read an existing `.env`. When the host has already bootstrapped, the factory uses that snapshot and loads nothing, so a host that bootstrapped from another directory keeps its config. `@askdb/config` exports `isAskDbRuntimeInitialized()` for this check. Options considered: keep the factory explicit and have every example call `bootstrapAskDbEnv()` first (the documented four-line example then fails every request when the call is missing, as #280 found); bootstrap on the first request (a missing config shows only as a `500`, while `/health` stays green); or bootstrap when the factory is built, which won because it fails at startup like the binary. The check is an exact export, not a `catch` around `getAskDbRuntimeConfig()`: a config error there would look like a missing snapshot, and the reload would replace the host's. The snapshot now lives on `globalThis` under `Symbol.for("askdb.runtimeStore")` instead of in a module variable, because `@askdb/http-api` pins its `@askdb/config` version: a host on another version loads a second copy, which would see no snapshot and reload from the working directory. Making `@askdb/config` a peer of `@askdb/http-api`, as `@askdb/client` does, was the other option; it lost because the apps are batteries-included and keep their runtime dependencies direct (ADR 0006). The snapshot's shape must stay readable by older copies; a change they can't read needs a new key. Library packages still take settings from their host.
-
-> **Amendment (2026-11, #264, #265, #626):** Item 5 changes. The loader accepts a plain `export default { … }` as well as `defineConfig({ … })`, and runs the plain object through `defineConfig`, so both forms get the same normalizing, checks and deprecation warnings. The guides showed plain objects and the reference called `defineConfig` types-only, while the loader rejected them; the alternative, wrapping every guide snippet in `defineConfig`, would have kept a strict loader that the docs' simplest form fails. `defineConfig` stays the typed helper and still returns the projection. A legacy flat map (`{ OPENAI_API_KEY: "…" }`) still fails to load: it has no `ai` block, and the loader now names the file and the missing block instead of crashing with a `TypeError`. `ai` and `introspection` stay required (#626): making `ai` optional for hosts that never generate SQL (#370) would make `AskDbRuntimeConfig.ai.language` optional, a public type change for every host that reads it, while an error that names the missing block already tells an introspect-only user what to add. The synchronous loader, and so `bootstrapAskDbEnv()` and the CLI, also loads `askdb.config.mjs`, through jiti like every other extension; a config file can't use top-level `await`.
-
-> **Amendment (2026-11, #281, #282, #377):** The shell-variable allowlist in Decision 1 is gone: #50 (2026-05) removed it, and this ADR wasn't updated then. `bootstrapAskDbEnv` builds the snapshot from `askdb.config.*` alone, so `ASKDB_MOCK_SQL`, `ASKDB_CORRELATION_ID`, `ASKDB_INTROSPECT_OUT` and the other flat keys are internal and never read from the environment; a config reads a variable with `env("…")`. `@askdb/config` reads one AskDB variable from `process.env` itself, `ASKDB_DEBUG` (`isAskDbDebugEnabled`), because it must work when the config fails to load. Decision 7's defaults are the config keys themselves: `askdb introspect` takes `introspection.outputDir` as `--out` and `introspection.providerConfig.prisma.schemaPath` as `--prisma-schema`. Help text, error messages and docs name these config keys, never a flat key.
-
-> **Amendment (2026-11, #711, #760):** `@askdb/config/scaffold` plans the whole new project, not just its `ai` block. `planAskDbScaffold(answers, versions)` takes a project's answers (engine, connection variable or SQLite file, Prisma schema path, schema directory, `ai`, RAG store, Studio execute) and returns the `askdb.config.ts` source, the `.env.example`, the env vars the config reads, and the packages to install. It owns the per-engine facts (config keys, URL formats, driver packages), the config and `.env.example` layouts, the install plan, and the env-name rule (POSIX, uppercase, `^[A-Z_][A-Z0-9_]*$`). It's pure and throws `AskDbScaffoldInputError` with the answer's field for a bad env name, a control character in a path, an unknown id or a missing answer. `askdb init` and Studio's setup wizard both call it. Before, each kept an engine switch and a copy of the templates, against ADR 0007's rule that apps don't re-implement per-engine switches, and the copies had drifted: the env-name pattern, path checks, SQLite handling, the `.env.example` and RAG layouts, the Prisma install. Options considered: keep both copies with a test that diffs their output (the drift becomes visible, but the switches stay in the apps); or move only the config renderer and leave `.env.example` and the install plan in each app (three of the drifts were there). The planner won because one module then holds every fact a new project needs, and both front ends test against it. Its engine table isn't the per-engine table ADR 0008 rejects: that one would resolve connections at runtime in each app, while this one only writes a new project's files, for the built-in engines that both wizards offer, and lives in one package. The defaults stay with the apps: env names from `@askdb/ai`, `DATABASE_URL`, `./askdb`, and `askdb init`'s `postgres` execute provider for Prisma, along with how each asks and how files land (`init`'s `--path`, `--force` and install at the nearest `package.json`; Studio's fixed path, its 409, its install of only what's missing, and its relative-only paths). Package versions are inputs too, since each app pins its own. A Prisma project's install includes `ai` (the newest major `@askdb/core`'s peer accepts) and `zod` (core's range), which Yarn Plug'n'Play needs in the project (#760). Neither app moves a range the project already chose: `askdb init` installs a package other than AskDB's own only when `package.json` doesn't list it, and Studio installs only what the project doesn't have. The entry point stays experimental under ADR 0030: a minor release of `@askdb/config` may change it.
-
-> **Amendment (2026-11, #711 candidate 7):** Decision 6 changes for hosts with a config file. `@askdb/ai`'s registry also takes a typed config section: `resolveAiConfigFromSection(rt.ai.language)`, `resolveEmbeddingConfigFromSection(rt.ai.embedding)`, the matching `create*ModelFromSection` methods, and `resolveReasoningEffortFromSection(rt.ai.language.reasoning, purpose)`. The runtime snapshot no longer derives an env map from the `ai` block: `ai.aiEnv`, `ai.language.env` and `ai.embedding.env` are gone, and the flat map holds no AI keys. `rt.ai.language` and `rt.ai.embedding` carry the section's typed connection settings instead, and are assignable to `@askdb/ai`'s `AiLanguageSection` / `AiEmbeddingSection` without either package depending on the other. The env-map methods stay, unchanged, for hosts with no config file; they still take the map as an explicit parameter, and `@askdb/ai` still reads `process.env` only for ADR 0036's check. Options considered: keep `@askdb/config` serializing each section to the env names each adapter reads (two copies of each provider's mapping, kept in step by a drift test); or have `@askdb/ai` take the section typed, which won because the mapping then lives once, next to each adapter's env spec. The `@askdb/client` drift test checks that the section and env paths give the same `AiConfig` for every provider.
-
-> **Amendment (2026-11, #787, ADR 0036):** Decision 6 has one exception. When a built-in provider builds a model from an `AiConfig` with no `baseURL`, `@askdb/ai` reads the base URL variable that provider's SDK falls back to (`OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`) from `process.env`, only to refuse one with a user name or password. It never uses the value: the SDK still reads it. No other `process.env` read is allowed outside `@askdb/config`.
-
-> **Amendment (2026-11, #839):** `askdb-http` passes `bootstrapAskDbEnv` its own `dotenvCandidatePaths`, and the order changed. Its first candidate was the `.env` three directories above `dist`, which in an install is `node_modules/.env`, so that file won over the working directory's. Now the working directory's `.env` comes first; the package folder's and the repo root's follow only when the binary runs from AskDB's own source checkout (`dist` beside its unpublished `src`), and a candidate inside `node_modules` is never read. Demoting `node_modules/.env` to last was the option not taken: it would still read settings from a folder the host doesn't own, and an install with only that file would load it silently. The CLI and Studio read only the working directory's `.env`, as before.
-
-> **Amendment (2026-11, #830):** Decision 1's list of exports shrinks: `flattenAskDbConfig`, `isAskDbEnvProjection` and the `ASKDB_ENV_PROJECTION` symbol are no longer exported, under ADR 0031's one-step rule as its #852/#830 amendment extends it. They stay inside the package. `defineConfig(config).entries` is the same map `flattenAskDbConfig(config)` returned. The loader still uses the check to tell `defineConfig({ … })` from a plain object, and the symbol, registered with `Symbol.for`, still marks a projection from any copy of the package. `mergeAskDbFlatIntoEnvMap` and `getAskDbRuntimeConfig().flat`, which the consequences name for spawning tools, stay exported until Studio stops reading the flat map (#752).
-
-> **Amendment (2026-11, #654):** `renderAskDbAiConfigScaffold`, from the 2026-09 amendment, is no longer exported from `@askdb/config/scaffold`: `askdb init` and Studio's setup wizard call `planAskDbScaffold`, which renders the `ai` block with it. `bootstrapAskDbRuntime`, an alias of `bootstrapAskDbEnv`, is removed, and `ASKDB_CONFIG_EXTENSION_PRECEDENCE` and five `DEFAULT_*` constants for settings the runtime view resolves stay inside the package.
-
-> **Amendment (2026-11, #833):** The loader loads a JavaScript config (`.js`, `.cjs`, `.mjs`) with Node's own `require` and creates jiti only for a TypeScript config (`.ts`, `.mts`, `.cts`). jiti can't start from inside an app's bundle (webpack 5 fails in `createJiti`; esbuild can't find jiti's transpiler), so a bundled `@askdb/config` loaded no config at all on webpack. Node's `require` is reached through `process.getBuiltinModule("node:module")`, which bundlers leave alone. The cost: Node's module rules now apply to a JavaScript config, so one that relied on jiti, such as ES module syntax in a file Node reads as CommonJS, or an import of TypeScript written for a compiler, fails with Node's error. Node also keeps an ES module whose evaluation threw, so a host that loads the config again in one process (Studio) can't load a fixed ES module config until it restarts; the loader recognises Node's repeated error and says so. Options considered: document only that `@askdb/config` stays out of the bundle (no code change, but webpack users can't bundle it at all); or a public way for a host to install a config object it imports itself, so the bundler compiles `askdb.config.ts` too (new public API, a one-way decision before 1.0). This one keeps the public API unchanged; a bundled TypeScript config still needs `@askdb/config` installed beside the bundle.
-
-## Context
-
-First-party apps (`askdb`, `@askdb/http-api`, `@askdb/studio`) load secrets and defaults from `.env` via `dotenv`, then read canonical names such as `OPENAI_API_KEY`, `ASKDB_*`, and `DATABASE_URL` directly from `process.env`. Library packages like `@askdb/core`, `@askdb/rag`, and `@askdb/tui` were also reading `process.env` directly, which means:
-
-- Users who prefer **friendly, project-specific** names in `.env` still need those values to end up on the canonical keys the rest of the stack reads.
-- A single flat map in `askdb.config.ts` is hard to scan and does not express **grouping** (AI vs database vs introspection vs RAG).
-- Library packages silently depend on `bootstrapAskDbEnv` having been called first, making the config flow implicit.
-
-[Prisma’s config file pattern](https://www.prisma.io/docs/orm/reference/prisma-config-reference) (`prisma.config.*` / `.config/prisma.*`, `env()` helper) is a familiar way to map arbitrary `.env` keys onto the names a toolchain expects, without changing runtime libraries to accept a second config object.
+**Status:** accepted · 2026-05-13
 
 ## Decision
 
-1. Add **`@askdb/config`**, which exports:
-   - `env(name)` / `requiredEnv(name)` — read `process.env` **only while `askdb.config.*` is evaluated** (Prisma-like semantics).
-   - `defineConfig(config)` — accepts a nested **`AskDbConfig`** and returns an **`AskDbEnvProjection`**: `{ config, entries }` where `entries` is the output of `flattenAskDbConfig` (canonical string map).
-   - `flattenAskDbConfig(config)` — validates discriminated branches and constrained unions; applies **`DATABASE_URL`** from `database` and overrides it only when `introspection.providerConfig.postgres.databaseUrl` is set for Postgres introspection; produces the canonical env record. Does **not** fall back to `process.env` for URLs when the structured value is unset (defaults live in `defaults.ts` / config file `env()`).
-   - `discoverAskDbConfigPath(cwd)` — locate `askdb.config.<ext>` then `.config/askdb.<ext>` with extension precedence `ts` → `mts` → `cts` → `js` → `mjs` → `cjs`.
-   - `bootstrapAskDbEnv(options?)` — load `.env` (optional candidate paths), load `askdb.config.*`, then install an **in-memory runtime snapshot** (`structured` + `flat` + derived `aiEnv`). It does **not** merge the full AskDB flat map into `process.env`. A **small allowlist** of shell variables (e.g. `ASKDB_MOCK_SQL`, `ASKDB_CORRELATION_ID`, `ASKDB_PRISMA_SCHEMA`, `ASKDB_INTROSPECT_OUT`, `DATABASE_URL`, `PORT`, `HOST`) may override flat entries at bootstrap time for tests, subprocess env, Prisma/Postgres CLI defaults, and platform-assigned listen addresses.
+`@askdb/config` loads `.env`, then `askdb.config.*`, and installs one runtime snapshot in memory. It does not copy the config into `process.env`. Every setting comes from the config file, and the file reads a variable with `env("NAME")`.
 
-2. Use **`.config/askdb.*`** (not `.config/prisma.*`) so AskDB config can coexist with Prisma’s own config directory layout in the same repository.
+Only `@askdb/config` reads `process.env`. A first-party app calls `bootstrapAskDbEnv()` once and then reads `getAskDbRuntimeConfig()`. A library package does neither: it takes plain values from its host.
 
-3. First-party binaries call `bootstrapAskDbEnv` **after** deciding whether `askdb init` is running: `init` must not require a valid config file (it only writes templates).
+| Part | What holds |
+|---|---|
+| Config file | `askdb.config.*`, or `.config/askdb.*` beside a Prisma config. The default export is `defineConfig({ … })` or a plain object. `ai` and `introspection` are required. |
+| Snapshot | One for each process. Every copy of `@askdb/config` in the process shares it. |
+| `createAskDbHttpServer()` | It uses the host's snapshot. With none, it bootstraps from the working directory when it is built. |
+| AI settings | The snapshot carries typed sections, and `@askdb/ai` takes a section as it is. Neither package depends on the other. |
+| A new project's files | `@askdb/config/scaffold` plans them. `askdb init` and Studio's setup wizard both call it. |
+| Exceptions | `ASKDB_DEBUG`, which `@askdb/config` reads itself, and the base URL check of ADR 0036. |
 
-4. `askdb init` writes **`askdb.config.ts` only** (no generated `.env`). The template uses **`defineConfig({ ... })`** with the nested shape (`ai`, `database`, `introspection`, `rag`, plus optional `logging` / `modes` / `studio` / `tui` / `httpApi` / `dev`, …). Guidance that previously lived in a split **`.env` template** is carried as **comments** inside `askdb.config.ts` (example keys, Pagila/pgvector hints, optional sections). The template imports **`env`** from `@askdb/config` and `import "dotenv/config"` so users can map variables from a **self-managed** `.env` or from the shell. Optional values use **literals** in the config file (for example an empty `apiKey` until you switch to `env("MY_OPENAI_API_KEY")`). **`process.env` is intentionally omitted** from the generated file so editors are less likely to suggest `@types/node` for that file alone.
+## Why
 
-5. **Legacy flat** `export default { OPENAI_API_KEY: "..." }` is **removed**: the loader requires `defineConfig({ ... })`.
+- A library that reads `process.env` depends on a hidden step: some code must load `.env` first. One reader makes that step explicit.
+- Users want their own variable names in `.env`. A config file maps them, as Prisma's does, and no library needs a second config object.
+- A nested, typed config groups the AI, database, introspection and RAG settings. A flat map of variable names does not.
 
-6. **`@askdb/config`** is the **single package that reads `process.env`** directly. Env-aware AI functions in `@askdb/ai` (e.g. `resolveAiConfig` and registry methods such as `createLanguageModelFromEnv`) accept the env map as an **explicit, required parameter** (typically **`getAskDbRuntimeConfig().ai.aiEnv`**). Library packages obtain all runtime configuration through **`getAskDbRuntimeConfig()`** and must not call `env()`, `requiredEnv()`, or read `process.env` — `env()` is reserved for end-user `askdb.config.*` authoring only.
+```mermaid
+flowchart LR
+  env[".env"] --> boot["bootstrapAskDbEnv()<br/>in @askdb/config"]
+  file["askdb.config.*"] --> boot
+  boot --> snap["Runtime snapshot<br/>(one for each process)"]
+  snap -->|getAskDbRuntimeConfig| apps["Apps<br/>(askdb, Studio, askdb-http)"]
+  apps -->|plain values| libs["Library packages"]
+```
 
-7. **Introspection CLI defaults:** after bootstrap, `askdb introspect` may take **`ASKDB_INTROSPECT_OUT`** as the effective **`--out`** when the user omits `--out`, `--print`, and `--diff`. For **`--engine prisma`**, **`ASKDB_PRISMA_SCHEMA`** may supply **`--prisma-schema`** when the flag is omitted. These keys are produced from `introspection.outputDir` and `introspection.providerConfig.prisma.schemaPath` when using the nested config file.
+## Options
 
-## Consequences
+| | Option | Why it lost |
+|---|---|---|
+| A | One package loads a config file into a snapshot, and only it reads `process.env` | **Chosen.** |
+| B | Each package reads fixed variable names from `process.env` | The load order is a hidden dependency, users cannot keep their own names, and a flat list has no groups. |
+| C | The loader accepts only `defineConfig({ … })` | The plain object, the simplest form in the guides, then fails to load. |
+| D | Make the `ai` block optional for a host that never generates SQL | The runtime's AI section becomes optional, a public type change for every host that reads it. |
+| E | The HTTP server factory leaves the bootstrap to the host | The documented four-line example fails every request when the host omits the call. |
+| F | The HTTP server bootstraps on the first request | A missing config shows only as a `500`, while `/health` stays green. |
+| G | Make `@askdb/config` a peer of `@askdb/http-api`, so a process has one copy | The apps are batteries-included and keep their runtime dependencies direct (ADR 0006). The copies share the snapshot instead. |
+| H | `@askdb/config` writes each AI section as the variable names each provider reads | Each provider's mapping then exists twice, and only a test holds the copies in step. |
+| I | Each app keeps its own project templates, with a test that compares them | The per-engine switches stay in the apps (ADR 0007), and the copies had already drifted. |
+| J | Put the project scaffold in `@askdb/ai` | It owns provider facts, not the shape of the config file, and it has no dependency on `@askdb/config`. |
+| K | Load every config file through jiti | jiti cannot start inside an app's bundle, so a bundled host loaded no config. A JavaScript config loads with Node's own loader. |
+| L | A public way for a host to install a config object that it imports itself | It is a new public API, and a one-way decision before 1.0. |
+| M | `askdb-http` reads a `.env` in `node_modules` last | It still reads settings from a folder that the host does not own. |
 
-- New workspace package and dependency edges from `apps/cli`, `apps/http-api`, `apps/studio`, `packages/rag`, and `packages/tui`.
-- Documentation and examples describe the `askdb init` single-file template, optional self-managed `.env`, nested authoring, and optional config discovery.
-- **`@askdb/config` is the sole `process.env` reader.** Library packages (`@askdb/rag`, `@askdb/tui`, …) depend on `@askdb/config` and use the typed `getAskDbRuntimeConfig()` gateway. They never reference `process.env` or `env()` outside config files.
-- Library-only consumers who embed AskDB packages call `bootstrapAskDbEnv()` first, then read configuration through `getAskDbRuntimeConfig()`.
-- Spawning tools may use **`mergeAskDbFlatIntoEnvMap`** with **`getAskDbRuntimeConfig().flat`** (plus any extra keys) to build a child `env` object.
+## Keep
 
-## Related
+| Rule | Checked by |
+|---|---|
+| Only `@askdb/config` reads `process.env`. ADR 0036's check in `@askdb/ai` is the one exception. | review |
+| An app reads settings through `getAskDbRuntimeConfig()`. A library package takes them from its host. | review |
+| Help text names config keys, never a variable that AskDB does not read. | `apps/cli/src/spawn-help.test.ts` |
+| `ASKDB_DEBUG` is the one AskDB variable read from the environment, and it works when the config fails to load. | `apps/cli/src/spawn-first-run.test.ts` |
+| `createAskDbHttpServer()` never loads a config over a host's snapshot, even when the host has its own copy of `@askdb/config`. With no config, it throws when it is built. | `apps/http-api/src/server.bootstrap.test.ts` |
+| A copy of `@askdb/config` reads a shared snapshot from its structured config, never from another copy's flat map. A shape that older copies cannot read needs a new key. | `packages/config/src/config.test.ts` |
+| A plain-object config gets the same checks as `defineConfig`. A config with no `ai` or no `introspection` block fails, and the error names the block. | `packages/config/src/config.test.ts` |
+| A JavaScript config loads without jiti. | `packages/config/src/load-js-config.test.ts` |
+| A typed AI section and the matching variable map give the same `AiConfig`, for every provider. | `packages/client/src/provider-config-drift.test.ts` |
+| `@askdb/config` and `@askdb/ai` do not depend on each other. | review |
+| Studio's setup wizard offers exactly the engines and stores that the scaffold planner writes. Neither app keeps its own project templates. | `apps/studio/src/setup-engines.test.ts`, review |
+| `askdb-http` tries the working directory's `.env` first, and never one inside `node_modules`. | `apps/http-api/src/dotenv-candidates.test.ts` |
+| `askdb init` runs without a config file. | review |
+| `@askdb/config/scaffold` stays an experimental entry point (ADR 0030). | review |
 
-- Prisma config reference: [Configuration files](https://www.prisma.io/docs/orm/reference/prisma-config-reference).
-- Core pipeline spec: [`docs/specs/core-pipeline.md`](../specs/core-pipeline.md).
+The config keys and the loader's rules are in the docs site's config reference.

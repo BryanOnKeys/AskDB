@@ -5,7 +5,7 @@ description: Add a new built-in AI provider to @askdb/ai from any Vercel AI SDK 
 
 # New AskDB built-in AI provider
 
-You are adding a built-in provider to `@askdb/ai` in the AskDB pnpm monorepo. Since the ADR 0006 amendment (Option E), providers are **not** separate packages: each is one file in `packages/ai/src/providers/`, one row in the built-in table, and one **optional peer dependency** that is loaded lazily. Do **not** create a `packages/ai-<provider>` package — the former `@askdb/ai-*` packages were removed before 1.0 (#347).
+You are adding a built-in provider to `@askdb/ai` in the AskDB pnpm monorepo. Since ADR 0006, providers are **not** separate packages: each is one file in `packages/ai/src/providers/`, one row in the built-in table, and one **optional peer dependency** that is loaded lazily. Do **not** create a `packages/ai-<provider>` package — the former `@askdb/ai-*` packages were removed before 1.0 (#347).
 
 This skill is self-contained: follow it top to bottom, run every verification command, and stop at any STOP condition instead of improvising.
 
@@ -26,7 +26,7 @@ grep -n "BUILTIN_AI_PROVIDERS" packages/ai/src/providers/index.ts   # must match
 grep -n "rethrowMissingPeer" packages/ai/src/providers/optional-peer.ts   # must match
 ```
 
-**STOP if either grep is empty** — the codebase predates the built-in provider table (ADR 0006 amendment, 2026-09); report that instead of scaffolding a package.
+**STOP if either grep is empty** — the codebase predates the built-in provider table (ADR 0006); report that instead of scaffolding a package.
 
 Repo facts you can rely on:
 
