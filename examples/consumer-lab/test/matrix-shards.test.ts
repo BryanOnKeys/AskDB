@@ -50,9 +50,9 @@ describe("matrix shards", () => {
 
   it("deals heaviest first, each to the lightest shard so far", () => {
     // Weights are FILE_SECONDS's, or DEFAULT_SECONDS for these made-up names.
-    expect(assignShards(["test/lab-ui-options.test.ts", "test/lab-ui-compare.test.ts", "test/x.test.ts", "test/y.test.ts"], 2)).toEqual([
-      ["test/lab-ui-options.test.ts"],
-      ["test/lab-ui-compare.test.ts", "test/x.test.ts", "test/y.test.ts"],
+    expect(assignShards(["test/lab-ask-replay-sqlserver.test.ts", "test/lab-ui-compare.test.ts", "test/x.test.ts", "test/y.test.ts"], 2)).toEqual([
+      ["test/lab-ui-compare.test.ts"],
+      ["test/lab-ask-replay-sqlserver.test.ts", "test/x.test.ts", "test/y.test.ts"],
     ]);
   });
 });

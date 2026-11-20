@@ -443,9 +443,9 @@ jobs:
   # (examples/consumer-lab/src/matrix-shards.ts) splits the files by their CI
   # cost. Each shard uploads .lab/matrix.shard-<i>.json; the `consumer-lab` job
   # merges them into .lab/matrix.json, prints the table to the job summary and
-  # fails on any FAIL cell, a failed or missing shard, or a failed shard job
-  # (shard 2 also runs the isolated safety proofs). It passes on
-  # pass / n/a / known. `consumer-lab` keeps the required check's name.
+  # fails on any FAIL cell, a failed or missing shard, or a failed shard or
+  # safety-proofs job (`consumer-lab (safety proofs)` runs beside the shards).
+  # It passes on pass / n/a / known. `consumer-lab` keeps the required check's name.
   #
   # Docs-only PRs skip it, by `changes`' `docs_only` output (job 0).
   consumer-lab-shard:
@@ -506,14 +506,6 @@ jobs:
           SHARD: ${{ matrix.shard }}
         run: pnpm lab:matrix "--shard=${SHARD}/2"
 
-      # The safety cases' effect proofs (#323), on a disposable second fixture (compose project
-      # askdb-lab-isolated, ports 25432/23306/23307/21433), never the shared one started above.
-      # The runner starts, seeds, tests and removes it, including after a failure. About a minute.
-      # Shard 2 runs it: its heaviest file is the lighter of the two.
-      - name: Prove the safety cases' effects on an isolated fixture copy
-        if: ${{ matrix.shard == 2 }}
-        run: pnpm lab:safety:isolated
-
       - name: Upload the shard's matrix
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -524,12 +516,54 @@ jobs:
           # .lab/ is a dot-directory, which upload-artifact skips by default.
           include-hidden-files: true
 
+  # The safety cases' effect proofs (#323), on a disposable second fixture (compose project
+  # askdb-lab-isolated, ports 25432/23306/23307/21433). The runner starts, seeds, tests and
+  # removes it, including after a failure. About a minute, on its own runner so it runs beside
+  # the shards instead of after one of them.
+  consumer-lab-safety:
+    name: consumer-lab (safety proofs)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Read-only, like the shards; see the build job.
+      - name: Set up Turbo's remote cache
+        uses: rharkor/caching-for-turbo@760158c05c47e7a764f78e9a22ca3b5a6ed8c52e # v2.5.2
+        continue-on-error: true
+
+      - name: Read Turbo's remote cache without writing to it
+        run: echo "TURBO_CACHE=local:rw,remote:r" >> "$GITHUB_ENV"
+
+      - name: Pack this commit's tarballs and install them in the lab
+        run: pnpm lab:use .
+
+      - name: Prove the safety cases' effects on an isolated fixture copy
+        run: pnpm lab:safety:isolated
+
   # Merges the shards (`pnpm lab:matrix:merge`, run with plain Node: it imports only Node's
   # built-ins, so this job needs no install).
   # It runs whenever the shards ran, pass or fail, so the merged table always lands in the
   # job summary; a missing shard file fails the merge (exit 2), not silently passes.
   consumer-lab:
-    needs: [changes, consumer-lab-shard]
+    needs: [changes, consumer-lab-shard, consumer-lab-safety]
     if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -563,14 +597,15 @@ jobs:
           # .lab/ is a dot-directory, which upload-artifact skips by default.
           include-hidden-files: true
 
-      # A shard can fail outside the matrix (install, lab:use, the isolated safety proofs)
-      # and still upload a clean shard file, so the merge alone isn't the verdict.
-      - name: Fail if a shard job failed
-        if: ${{ needs.consumer-lab-shard.result != 'success' }}
+      # A shard can fail outside the matrix (install, lab:use) and still upload a clean shard
+      # file, and the safety proofs write no matrix, so the merge alone isn't the verdict.
+      - name: Fail if a shard or the safety proofs failed
+        if: ${{ needs.consumer-lab-shard.result != 'success' || needs.consumer-lab-safety.result != 'success' }}
         env:
-          RESULT: ${{ needs.consumer-lab-shard.result }}
+          SHARDS: ${{ needs.consumer-lab-shard.result }}
+          SAFETY: ${{ needs.consumer-lab-safety.result }}
         run: |
-          echo "::error::consumer-lab shard jobs finished with result: ${RESULT}"
+          echo "::error::consumer-lab shards: ${SHARDS}; safety proofs: ${SAFETY}"
           exit 1
 
   # ── 5. verify-askdb replays ──────────────────────────────────────────────
