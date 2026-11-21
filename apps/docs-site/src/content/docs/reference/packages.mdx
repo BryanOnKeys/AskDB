@@ -163,7 +163,7 @@ The save functions write only inside the schema directory, through `@askdb/core`
 
 ### `@askdb/rag`
 
-Chunks the schema artifact, indexes it in a vector store, and retrieves relevant chunks per question. Use with `ask()`'s `retriever` option for large schemas. Always install `ai`: `@askdb/rag` depends on `@askdb/core`, which loads `ai` when it is imported, even with a custom embedder or the in-memory or file store. Install `@ai-sdk/openai` and `pg` only if your embedder and vector store use them; they are optional peers. Their AI SDK 7 floors (`ai` `^7.0.51`, `@ai-sdk/openai` `^4.0.29`) move the same way as the adapters' `ai` floor. The AI SDK 6 floors (`^6.0.0`, `^3.0.0`) move only on purpose, with the AI SDK 6 install smoke's pins.
+Chunks the schema artifact, indexes it in a vector store, and retrieves relevant chunks per question. Use with `ask()`'s `retriever` option for large schemas. Always install `ai`: `@askdb/rag` depends on `@askdb/core`, which loads `ai` when it is imported, even with a custom embedder or the in-memory or file store. Install `pg` only if your vector store uses it; it is an optional peer. The embedding model is bring-your-own (for example `@ai-sdk/openai` via `@askdb/ai`); `@askdb/rag` declares no `@ai-sdk/openai` peer. The AI SDK 7 floor (`ai` `^7.0.51`) moves the same way as the adapters' `ai` floor. The AI SDK 6 floor (`^6.0.0`) moves only on purpose, with the AI SDK 6 install smoke's pins.
 
 <InstallTabs pkgs="@askdb/rag ai" />
 
@@ -266,7 +266,7 @@ flowchart TB
 | `@askdb/config` | No AskDB package |
 | `@askdb/client` | `@askdb/ai`; `@askdb/core`, `@askdb/config` and `ai` as peers; the `@ai-sdk/*` provider packages as optional peers |
 | `@askdb/enrich` | `@askdb/core`; `ai` as a peer |
-| `@askdb/rag` | `@askdb/core`; `ai`, `@ai-sdk/openai` and `pg` as optional peers |
+| `@askdb/rag` | `@askdb/core`; `ai` and `pg` as optional peers |
 | `@askdb/studio` | `@askdb/core`, `@askdb/ai`, `@askdb/config`, `@askdb/enrich`, `@askdb/introspect`, `@askdb/rag`, the four engine packages, `ai`, the four `@ai-sdk/*` provider packages and `zod`; `@askdb/prisma` and the database drivers as optional peers |
 | `@askdb/http-api` | `@askdb/client`, `@askdb/core`, `@askdb/ai`, `@askdb/config`, `ai`, the four `@ai-sdk/*` provider packages and `zod`. No engine package: it doesn't connect to your database. |
 | `askdb` (CLI) | Every package above except `@askdb/http-api`, plus `ai` and the four `@ai-sdk/*` provider packages, lazy-imported per command, and `zod`, which those packages need as a peer. `@askdb/prisma` is an optional peer. |

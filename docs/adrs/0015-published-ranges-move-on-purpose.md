@@ -1,6 +1,6 @@
 # ADR 0015: Published peer ranges move only on purpose
 
-**Status:** accepted · 2026-09-30
+**Status:** accepted · 2026-09-30 · Amended 2026-11 (#849: `@askdb/rag` drops its `@ai-sdk/openai` peer)
 
 ## Decision
 
