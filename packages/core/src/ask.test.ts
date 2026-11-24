@@ -1697,12 +1697,9 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
     });
   });
 
-  it("merges a custom dialect's reported failures into the result (warn)", async () => {
+  it("adds ask()'s own findings beside a custom dialect's reported failures (warn)", async () => {
     const base = loadSchema(multiTenantDir);
     const schema = { ...base, tenantPolicy: { ...base.tenantPolicy!, enforcement: "warn" as const } };
-    // The dialect returns unscoped SQL with its own failure: ask()'s own check must
-    // add MISSING_TENANT_PREDICATE, not pass the dialect's report through unchanged
-    // (the pre-#186 behaviour, which this test would then fail to catch).
     const dialect: AskDialect = {
       generate: async () => ({
         sql: "SELECT * FROM orders",
