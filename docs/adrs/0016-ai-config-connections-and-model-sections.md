@@ -1,43 +1,55 @@
-# ADR 0016 — AI config: provider connections and per-use model sections
+# ADR 0016: AI config: connections in `providerConfig`, the model choice in `language` and `embedding`
 
-## Status
-
-Accepted (2026-10-02, maintainer decision). Implemented by #435, which also fixes the RAG key leak in #345: the types are in `packages/config/src/types.ts`, the translation of the old keys and the section resolution in `packages/config/src/resolve.ts` (`normalize.ts` before #711), and Studio's RAG embedder reads `getAskDbRuntimeConfig().ai.embedding`. AskDB assumes no vector width for any model, old configs included (maintainer decision on #435): it learns the width from the model, and a deprecation warning tells an old config which width an existing index has.
-
-> **Amendment (2026-11, #711 candidate 7, #765):** Two decisions below change. The old keys aren't translated any more: each fails to load, with an error naming it and its replacement, since `@askdb/config` 1.0.0-beta.19 (#765, before `1.0.0-rc.1` freezes the API). And no section has an env view: `rt.ai.language.env`, `rt.ai.embedding.env` and `rt.ai.aiEnv` are gone. Each section carries its connection's typed settings (`connection: { name, apiKey, apiKeySecondary, baseUrl, resourceName, apiVersion }`) and goes to `@askdb/ai`'s `*FromSection` methods as it is (ADR 0006's 2026-11 amendment). A section still receives its own connection only, so the #345 guarantee holds without the per-section env maps.
-
-> **Amendment (2026-11, #651):** `@askdb/ai`'s `defaultEmbeddingModel` is removed, not only deprecated: an env map with an API key and no embedding model now fails as the section path does, so no layer picks an embedding model.
-
-## Context
-
-`askdb.config` configured embeddings in the `rag` block. Its one branch, `rag.embedderConfig.openai`, was required by both the `openai` and `ai-sdk` embedders, and an unset model meant `text-embedding-3-small` whatever the provider. The layers under the config were already provider-neutral: `@askdb/rag` takes any AI SDK embedding model, and `@askdb/ai` treats embedding as one use of a provider (`AiUsage = "language" | "embedding"`). Every built-in adapter except Anthropic's builds embedding models; Anthropic has no embeddings API, so its adapter throws. The mismatch caused #345. With `ai.provider: "google"` and `rag.embedder: "ai-sdk"`, Studio sent the key from the OpenAI branch to Google and asked Google for an OpenAI model.
-
-The `ai` block had a second problem. `ai.providerConfig.<provider>` mixed a provider connection (key, endpoint, resource, API version) with the language model choice (`model`, and Azure's `modelFamily`). A provider used only for embeddings had nowhere clean to go, and one provider couldn't have two connections, for example an Azure embedding deployment on a different resource than the language deployment.
+**Status:** accepted · 2026-10-02
 
 ## Decision
 
-- `ai.providerConfig.<provider>` holds provider connections only. Each value is one connection or an array of them. A connection's `name` defaults to `"default"` and is unique within its provider. Keys stay provider ids, custom providers included, so `providerConfig.custom` goes away.
-- The model choice moves into one section per use: `ai.language` (`provider?`, `connection?`, `model?`, `modelFamily?`, `reasoning?`) and `ai.embedding` (`provider?`, `connection?`, `model`, `dimensions?`).
-- `ai.provider` becomes an optional default for both sections. A section's provider is `section.provider ?? ai.provider`, and its connection is `section.connection ?? "default"`, looked up within that provider. A section that resolves to no provider, or to a connection that doesn't exist, fails at load.
-- The language model keeps a per-provider default. The embedding model is required whenever `rag.embedder` is `"ai"`, and no layer picks one: `@askdb/ai`'s `defaultEmbeddingModel` is deprecated too (removed since #651; see the amendment above). An embedding section that resolves to Anthropic fails at load.
-- Dimensions live only in `ai.embedding.dimensions`, as a size to request from the provider. When a store needs the width up front (a new pgvector table), AskDB learns it from the model (`detectEmbeddingDimensions` in `@askdb/rag`), so no layer keeps a list of model widths. (Amended 2026-10-03 on #435: the first version required `dimensions` whenever AskDB didn't know the model's width.)
-- `rag` keeps what belongs to retrieval: `embedder: "mock" | "ai"` and the store.
-- Old keys are translated at load with a warning and removed at the 1.0 cutover. The translation carries a legacy embedding key or base URL only to openai, azure, foundry or gateway; for any other provider, loading fails and the error shows the replacement block.
+`ai.providerConfig.<provider>` holds provider connections only: a key, an endpoint, a resource, an API version. A value is one connection or a list of them. A connection's `name` defaults to `"default"` and is unique within its provider.
 
-## Options considered
+The model choice has one section per use: `ai.language` and `ai.embedding`. `ai.provider` is an optional default for both. A section's provider is its own `provider` or `ai.provider`. Its connection is its own `connection` or `"default"`, found within that provider. Each section receives its own connection only.
 
-- **Embeddings stay under `rag`, with their own provider and key (`rag.embedderConfig.ai`, #345's original plan).** Rejected: a second place for the same secret, and RAG keeps a provider resolution of its own next to `ai`'s.
-- **An `embeddingModel` field inside each provider branch.** Rejected: one choice split across two places, and the connection and the model choice stay mixed.
-- **No top-level default: `provider` required in every section.** Rejected: every existing config would have to migrate `ai.provider`.
-- **No top-level default: a section's provider is inferred from the only connection.** Rejected: adding a second connection would break a section the user didn't edit.
-- **Named connections as `providerConfig` keys, each with a `provider` field.** Rejected: keys would stop being provider ids, so entries would lose their per-provider types. Connection lists keep them.
-- **Connection names global across providers.** Rejected: the name would become a second way to choose a provider, which could contradict `section.provider`.
-- **A default embedding model per provider.** Rejected: the model is baked into a persisted index (the embedder id and the vector width), so a default that changes, or a model the provider retires, invalidates every index built on it. On Azure the model is a deployment name, so a default is a guess.
-- **Remove the old keys and ship a codemod.** Rejected: published betas carry the old shape, and a codemod would have to make the same ambiguous call the translation makes.
+The language model has a default per provider. The embedding model has none: `rag.embedder: "ai"` requires `ai.embedding.model`, and no layer picks one. `ai.embedding.dimensions` is only a size to request from the provider. When a store needs the width first, AskDB learns it from the model.
 
-## Consequences
+`rag` keeps the embedder switch and the store. A section that cannot resolve fails at load. A removed key fails at load too, and the error names its replacement.
 
-- Changing a section's provider while its `model` stays explicit pairs that model id with the new provider. Config loading can't catch this, because AskDB can't validate every provider's model ids, so it fails at the first model call, and that error should name the section and the provider. Before, the language model sat inside its provider's branch, so changing `ai.provider` couldn't mis-pair it.
-- The flat env map can't hold two connections for one provider, so each section gets an env view of its own. `rt.ai.aiEnv` stays the language view.
-- The type can't require the connection a section points at. It's a load-time check, as `requireProviderBranch` already was: known provider names also fit the custom branch, so a missing branch never failed to compile.
-- Studio embedder ids change for setups that don't use OpenAI, which forces a one-time reindex.
+## Why
+
+- The embedding key was in an OpenAI branch under `rag`. With another provider, Studio sent that key to the wrong provider and asked it for an OpenAI model.
+- One object held a connection and a model choice. It left no place for a provider used only for embeddings, or for a second connection to one provider.
+- The embedding model is part of a stored index: the embedder ID and the vector width. A default that changes makes each index built on it invalid.
+- The cost: a new provider beside an explicit `model` pairs that model ID with the new provider. Config loading cannot catch this, so the first model call fails.
+
+```mermaid
+flowchart LR
+  def["ai.provider<br/>(optional default)"] -.-> lang
+  def -.-> emb
+  lang["ai.language<br/>(model, reasoning)"] -->|provider and connection name| conns["ai.providerConfig<br/>(connections per provider)"]
+  emb["ai.embedding<br/>(model, dimensions)"] -->|provider and connection name| conns
+  rag["rag<br/>(embedder switch, store)"] -->|embedder is ai| emb
+```
+
+## Options
+
+| | Option | Why it lost |
+|---|---|---|
+| A | Connections in `providerConfig`, one model section per use, an optional `ai.provider` default | **Chosen.** |
+| B | Embeddings stay under `rag`, with their own provider and key | It is a second place for the same secret, and RAG keeps a provider resolution of its own. |
+| C | An `embeddingModel` field in each provider branch | One choice is split across two places, and the connection and the model choice stay mixed. |
+| D | No default: `provider` is required in every section | Every existing config must migrate `ai.provider`. |
+| E | No default: a section's provider comes from the only connection | A second connection breaks a section that the user did not edit. |
+| F | Named connections as `providerConfig` keys, each with a `provider` field | The keys stop being provider IDs, so the entries lose their per-provider types. |
+| G | Connection names global across providers | The name becomes a second way to choose a provider, and it can contradict `section.provider`. |
+| H | A default embedding model per provider | A changed default or a retired model invalidates each index built on it, and on Azure the model is a deployment name. |
+| I | Require `dimensions` when AskDB does not know a model's width | AskDB must then keep a list of model widths. |
+
+## Keep
+
+| Rule | Checked by |
+|---|---|
+| A provider secret has one place: a connection in `ai.providerConfig`. A section receives its own connection only. | `packages/config/src/config.test.ts` |
+| No layer picks an embedding model: not the config, not `@askdb/ai`, not a custom adapter. | `packages/config/src/config.test.ts`, `packages/ai/src/section.test.ts`, `packages/ai/src/provider.test.ts` |
+| No layer keeps a list of model widths. A store that needs the width gets it from the model. | `packages/rag/src/embedders/dimensions.test.ts`, `packages/config/src/config.test.ts` |
+| A section fails at load when it has no provider, names a connection that does not exist, or uses Anthropic for embeddings. | `packages/config/src/config.test.ts` |
+| A connection name is unique within its provider. | `packages/config/src/config.test.ts` |
+| A removed key fails at load. The error names the key and its replacement, never a value. | `packages/config/src/config.test.ts` |
+| The keys of `ai.providerConfig` are provider IDs, custom providers included. | `packages/config/src/config.test.ts` |

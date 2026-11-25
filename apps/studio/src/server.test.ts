@@ -12,6 +12,7 @@ import {
 } from "@askdb/config";
 import type { AskDbConfig } from "@askdb/config";
 import { loadSchema, parseTableMarkdown } from "@askdb/core";
+import type { SuggestSource } from "@askdb/enrich";
 import { createMemoryStore, PgvectorDimensionMismatchError } from "@askdb/rag";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -103,6 +104,27 @@ describe("AskDB Studio server", () => {
     return { baseUrl: await listen(server), model };
   }
 
+  /**
+   * Submits a suggestion to the clinic Studio with AI unavailable, mirroring the setup used by
+   * the unknown-reference tests, and returns the raw response. Status-code and message
+   * assertions stay explicit in each test.
+   */
+  async function postUnconfiguredSuggest(source: SuggestSource): Promise<Response> {
+    resetAskDbRuntimeForTests();
+    installStudioRuntime({
+      ...STUDIO_TEST_BASE,
+      ai: {
+        ...STUDIO_TEST_BASE.ai,
+        providerConfig: { openai: {} },
+      },
+    });
+    const schemaDir = writeClinicSchema();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+    return postRaw(`${baseUrl}/api/suggest`, { source });
+  }
+
   /** Asks the clinic Studio for a tenant-policy draft; returns the draft and the prompt the model received. */
   async function suggestTenantPolicyFor(options: { omitSensitiveFromPrompt: boolean }) {
     const { baseUrl, model } = await startClinicStudio({
@@ -188,6 +210,31 @@ describe("AskDB Studio server", () => {
     });
     expect(retrieved.results.length).toBeGreaterThan(0);
     expect(retrieved.results[0].text).toEqual(expect.any(String));
+  });
+
+  // #1047: the server's type allowlist predated the tenant-policy chunk type, so a query filtered
+  // to tenant-policy alone came back with every type.
+  it("filters a RAG query to tenant-policy chunks, and refuses an unknown, empty or non-array type list", async () => {
+    installStudioRuntime();
+    const server = createStudioServer({ schema: copyFixture("agency-multi-tenant.schema") });
+    servers.push(server);
+    const baseUrl = await listen(server);
+    await postJson(`${baseUrl}/api/rag/index`, {});
+
+    const retrieved = await postJson(`${baseUrl}/api/rag/query`, {
+      question: "Which agency owns a client?",
+      k: 25,
+      types: ["tenant-policy"],
+    });
+    expect(retrieved.results.length).toBeGreaterThan(0);
+    expect(new Set(retrieved.results.map((result: { type: string }) => result.type))).toEqual(new Set(["tenant-policy"]));
+
+    // Each of these would otherwise widen the query to every type.
+    for (const types of [["tenant-policy", "nope"], [], "tenant-policy", null]) {
+      const refused = await postRaw(`${baseUrl}/api/rag/query`, { question: "Which agency?", types });
+      expect(refused.status, JSON.stringify(types)).toBe(400);
+      await expect(refused.json()).resolves.toMatchObject({ error: { message: expect.stringContaining("`types`") } });
+    }
   });
 
   // #375 review: roots whose labels derive the same placeholder are a load error. Studio
@@ -371,6 +418,93 @@ describe("AskDB Studio server", () => {
     expect(message).toContain("modes.omitSensitiveFromPrompt");
     // Error messages never name a sensitive identifier.
     expect(message).not.toContain("diagnosis_code");
+    expect(model.requests).toHaveLength(0);
+  });
+
+  it("returns 404 for a suggestion for an unknown table, and calls no model", async () => {
+    const { baseUrl, model } = await startClinicStudio({
+      omitSensitiveFromPrompt: false,
+      reply: "A suggestion.",
+    });
+
+    const response = await postRaw(`${baseUrl}/api/suggest`, {
+      source: {
+        scope: "table",
+        tableId: "table:public.nonexistent",
+        field: "description",
+      },
+    });
+
+    expect(response.status).toBe(404);
+    const { message } = ((await response.json()) as { error: { message: string } }).error;
+    expect(message).toBe(`No such table: table:public.nonexistent`);
+    expect(model.requests).toHaveLength(0);
+  });
+
+  it("returns 404 for a suggestion for an unknown column, and calls no model", async () => {
+    const { baseUrl, model } = await startClinicStudio({
+      omitSensitiveFromPrompt: false,
+      reply: "A suggestion.",
+    });
+
+    const response = await postRaw(`${baseUrl}/api/suggest`, {
+      source: {
+        scope: "column",
+        tableId: "table:public.patients",
+        columnId: "table:public.patients#nonexistent",
+        field: "description",
+      },
+    });
+
+    expect(response.status).toBe(404);
+    const { message } = ((await response.json()) as { error: { message: string } }).error;
+    expect(message).toBe("Column not found: table:public.patients#nonexistent in public.patients");
+    expect(model.requests).toHaveLength(0);
+  });
+
+  it("returns 404 for an unknown table even when AI is not configured", async () => {
+    const response = await postUnconfiguredSuggest({
+      scope: "table",
+      tableId: "table:public.nonexistent",
+      field: "description",
+    });
+
+    expect(response.status).toBe(404);
+    const { message } = ((await response.json()) as { error: { message: string } }).error;
+    expect(message).toBe(`No such table: table:public.nonexistent`);
+  });
+
+  it("returns 404 for an unknown column even when AI is not configured", async () => {
+    const response = await postUnconfiguredSuggest({
+      scope: "column",
+      tableId: "table:public.patients",
+      columnId: "table:public.patients#nonexistent",
+      field: "description",
+    });
+
+    expect(response.status).toBe(404);
+    const { message } = ((await response.json()) as { error: { message: string } }).error;
+    expect(message).toBe("Column not found: table:public.patients#nonexistent in public.patients");
+  });
+
+  it("returns 404 for a suggestion for a column of another table, and calls no model", async () => {
+    const { baseUrl, model } = await startClinicStudio({
+      omitSensitiveFromPrompt: false,
+      reply: "A suggestion.",
+    });
+
+    const response = await postRaw(`${baseUrl}/api/suggest`, {
+      source: {
+        scope: "column",
+        tableId: "table:public.patients",
+        columnId: "table:public.visits#id",
+        field: "description",
+      },
+    });
+
+    expect(response.status).toBe(404);
+    const { message } = ((await response.json()) as { error: { message: string } }).error;
+    expect(message).toBe("Column not found: table:public.visits#id in public.patients");
     expect(model.requests).toHaveLength(0);
   });
 
@@ -1740,10 +1874,10 @@ describe("a schema whose provider has no AskDB dialect (#886, ADR 0039)", () => 
   });
 });
 
-function copyFixture(): string {
+function copyFixture(name = "orders-users.schema"): string {
   const dir = mkdtempSync(join(tmpdir(), "askdb-studio-"));
-  const schemaDir = join(dir, "orders-users.schema");
-  cpSync(join(repoRoot, "fixtures/schemas/orders-users.schema"), schemaDir, {
+  const schemaDir = join(dir, name);
+  cpSync(join(repoRoot, "fixtures/schemas", name), schemaDir, {
     recursive: true,
   });
   return schemaDir;
@@ -1957,6 +2091,16 @@ function writeClinicSchema(): string {
         schema: "public",
         columns: [column("audit_trail", "id", { primaryKey: true })],
       },
+      {
+        id: "table:public.visits",
+        name: "visits",
+        schema: "public",
+        columns: [
+          column("visits", "id", { primaryKey: true }),
+          column("visits", "patient_id"),
+          column("visits", "visited_on"),
+        ],
+      },
     ],
   };
   mkdirSync(join(schemaDir, "tables"), { recursive: true });
@@ -2009,7 +2153,7 @@ async function readBody(req: IncomingMessage): Promise<string> {
 }
 
 function lexicalVector(text: string, dim: number): number[] {
-  const vector = new Array<number>(dim).fill(0);
+  const vector = Array.from({ length: dim }, () => 0);
   for (const token of text.toLowerCase().match(/[a-z0-9_]+/g) ?? []) {
     vector[token.length % dim] += 1;
   }

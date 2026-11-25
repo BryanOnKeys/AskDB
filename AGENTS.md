@@ -16,6 +16,7 @@ pnpm workspace + Turborepo, TypeScript. Node 22.23.4+ to develop; published pack
 - `apps/http-api` — HTTP wrapper over core.
 - `apps/studio` — browser UI for schema enrichment.
 - `apps/docs-site` — Starlight docs site (askdb.tools).
+- `e2e` — private package: scripted replays of the verify-askdb feature map (Vitest for the CLI and API, Playwright for Studio) and the harness they share with the `verify-askdb` skill.
 
 ## Commands
 
@@ -23,7 +24,8 @@ pnpm workspace + Turborepo, TypeScript. Node 22.23.4+ to develop; published pack
 pnpm install
 pnpm build           # turbo run build
 pnpm test            # turbo run test — integration tests run when DATABASE_URL is set
-pnpm lint            # turbo run lint — TypeScript noEmit
+pnpm lint            # oxlint over the repo (.oxlintrc.json, warnings fail), then turbo run lint — TypeScript noEmit
+pnpm e2e             # verify-askdb replays; first run: pnpm -C e2e exec playwright install chromium
 pnpm docs:dev         # docs site at 127.0.0.1:4310
 pnpm docs:build
 ```

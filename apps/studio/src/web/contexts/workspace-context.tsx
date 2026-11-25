@@ -12,6 +12,7 @@ import {
   suggest,
   suggestTenantPolicy,
 } from "../api";
+import { isDraftEdited, refreshDrafts } from "../lib/drafts";
 import { parseList } from "../lib/format";
 import { suggestionKey } from "../lib/suggest-all";
 
@@ -21,6 +22,8 @@ async function handleSuggestTenantPolicy() {
 
 type LoadState = { kind: "loading" | "ready" | "error" | "setup"; message?: string };
 export type StatusMessage = { kind: "neutral" | "loading" | "success" | "error"; text: string };
+/** How long a success or neutral status stays on screen before it clears itself. */
+export const STATUS_CLEAR_MS = 4000;
 /** Drafts the model returned for one field, shown inline under it until Use or Dismiss (#952). */
 export type FieldSuggestion = { source: SuggestSource; candidates: Array<{ text: string }> };
 export type SuggestAllProgress = { tableId: string; done: number; total: number };
@@ -48,6 +51,11 @@ interface WorkspaceContextValue {
   suggestAllProgress: SuggestAllProgress | null;
 
   load: () => Promise<void>;
+  /**
+   * Re-read the workspace without the loading screen, so the page on screen stays mounted (and
+   * keeps its own state, such as a status message). Unsaved drafts survive. Throws on failure.
+   */
+  refresh: () => Promise<void>;
   saveSelectedTable: () => Promise<void>;
   resetSelectedDraft: () => void;
   updateTableDraft: (tableId: string, updater: (d: TableDraft) => TableDraft) => void;
@@ -89,6 +97,7 @@ type WorkspaceAction =
   | { type: "set_loadState"; payload: LoadState }
   | { type: "setup_required"; status: SetupStatusDto }
   | { type: "load_complete"; workspace: StudioWorkspaceDto }
+  | { type: "refresh_complete"; workspace: StudioWorkspaceDto }
   | { type: "set_workspace"; payload: StudioWorkspaceDto | null }
   | { type: "workspace_and_drafts"; workspace: StudioWorkspaceDto }
   | { type: "set_selectedTableId"; payload: string | null }
@@ -118,6 +127,11 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
         loadState: { kind: "ready" },
       };
     }
+    case "refresh_complete": return {
+      ...state,
+      workspace: action.workspace,
+      drafts: refreshDrafts(state.drafts, savedDrafts(state.workspace), savedDrafts(action.workspace)),
+    };
     case "set_workspace": return { ...state, workspace: action.payload };
     case "workspace_and_drafts": return {
       ...state,
@@ -190,9 +204,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [tables, selectedTableId],
   );
   const selectedDraft = selectedTable ? drafts[selectedTable.physical.id] ?? selectedTable.draft : null;
-  const dirty =
-    Boolean(selectedTable && selectedDraft) &&
-    JSON.stringify(selectedDraft) !== JSON.stringify(selectedTable?.draft);
+  const dirty = Boolean(selectedTable) && isDraftEdited(selectedDraft ?? undefined, selectedTable?.draft);
 
   const filteredTables = useMemo(() => {
     const query = tableSearch.trim().toLowerCase();
@@ -210,7 +222,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (saveStatus?.kind === "success" || saveStatus?.kind === "neutral") {
-      const id = setTimeout(() => clearSaveStatus(), 4000);
+      const id = setTimeout(() => clearSaveStatus(), STATUS_CLEAR_MS);
       return () => clearTimeout(id);
     }
   }, [saveStatus]);
@@ -242,6 +254,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const refresh = useCallback(async () => {
+    const nextWorkspace = await getWorkspace();
+    dispatch({ type: "refresh_complete", workspace: nextWorkspace });
+  }, []);
+
   const saveSelectedTable = useCallback(async () => {
     if (!selectedTable || !selectedDraft) return;
     setSaveStatus({ kind: "loading", text: "Saving changes..." });
@@ -269,7 +286,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const updateColumnDraft = useCallback((tableId: string, columnId: string, updater: (d: ColumnDraft) => ColumnDraft) => {
     updateTableDraft(tableId, (draft) => {
       const columns = { ...draft.columns };
-      columns[columnId] = updater({ ...(columns[columnId] ?? {}) });
+      columns[columnId] = updater({ ...columns[columnId] });
       return { ...draft, columns };
     });
   }, [updateTableDraft]);
@@ -345,7 +362,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       try {
         const nextWorkspace = await saveTenantPolicy({ frontmatter, body });
         dispatch({ type: "set_workspace", payload: nextWorkspace });
-        setSaveStatus({ kind: "success", text: "Tenant policy saved." });
+        // The save swaps the form for the summary, so TenancyPage owns the success message (#1051).
+        setSaveStatus(null);
         saved = true;
       } catch (error) {
         setSaveStatus({ kind: "error", text: getErrorMessage(error) });
@@ -358,12 +376,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     loadState, setupStatus, workspace, tables, filteredTables, selectedTable, selectedTableId, setSelectedTableId,
     drafts, selectedDraft, dirty, tableSearch, setTableSearch, saveStatus, setSaveStatus, busy,
     suggestions, suggestingKeys, suggestAllProgress,
-    load, saveSelectedTable, resetSelectedDraft, updateTableDraft, updateColumnDraft,
+    load, refresh, saveSelectedTable, resetSelectedDraft, updateTableDraft, updateColumnDraft,
     requestSuggestion, suggestAll, applySuggestion, dismissSuggestion, handleSaveConcepts, handleSaveTenantPolicy, handleSuggestTenantPolicy,
     withBusy,
   }), [
     applySuggestion, busy, dirty, dismissSuggestion, drafts, filteredTables, handleSaveConcepts,
-    handleSaveTenantPolicy, load, loadState, requestSuggestion, resetSelectedDraft,
+    handleSaveTenantPolicy, load, loadState, refresh, requestSuggestion, resetSelectedDraft,
     saveSelectedTable, saveStatus, selectedDraft, selectedTable, selectedTableId,
     setSaveStatus, setSelectedTableId, setTableSearch,
     setupStatus, suggestAll, suggestAllProgress, suggestingKeys, suggestions, tableSearch, tables, updateColumnDraft,
@@ -375,6 +393,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
 function makeDraftMap(workspace: StudioWorkspaceDto): Record<string, TableDraft> {
   return Object.fromEntries(workspace.tables.map((t) => [t.physical.id, clone(t.draft)]));
+}
+
+/** Each table's saved draft, by table id (empty before the first load). */
+function savedDrafts(workspace: StudioWorkspaceDto | null): Record<string, TableDraft> {
+  return Object.fromEntries(workspace?.tables.map((t) => [t.physical.id, t.draft]) ?? []);
 }
 
 function clone<T>(value: T): T {

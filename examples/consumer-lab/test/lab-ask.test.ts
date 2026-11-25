@@ -22,13 +22,10 @@
  * Needs the fixture (`pnpm fixture:up`) and an installed lab (`pnpm lab:use .`). It
  * fails, rather than skips, when either is missing.
  */
-import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { needsCapability } from "../src/capabilities.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../src/dialects.js";
-
-const LAB = fileURLToPath(new URL("..", import.meta.url));
+import { runLabSync } from "./support/lab-cli.js";
 
 /** `org.agency` everywhere except SQLite, whose single namespace holds the table unqualified. */
 function agencyTable(dialect: SupportedDialect): string {
@@ -36,10 +33,7 @@ function agencyTable(dialect: SupportedDialect): string {
 }
 
 function labAsk(dialect: SupportedDialect, sql: string) {
-  const run = spawnSync("pnpm", ["--silent", "lab", "ask", "--db", dialect, "--sql", sql], {
-    cwd: LAB,
-    encoding: "utf8",
-  });
+  const run = runLabSync(["ask", "--db", dialect, "--sql", sql]);
   return { status: run.status, out: `${run.stdout}\n${run.stderr}` };
 }
 

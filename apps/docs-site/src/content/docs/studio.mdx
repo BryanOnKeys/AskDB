@@ -24,10 +24,12 @@ Studio also works as the *first* command in a new project. Some directories have
 <Steps>
 
 1. **Pick your database engine and AI provider.** The wizard asks for environment variable *names* only, never secret values. Studio writes `askdb.config.ts` and an `.env.example`, and installs the packages the config needs.
-2. **Add your secrets to `.env` yourself.** The wizard shows which variables to fill in. The values stay on your disk.
+2. **Add your secrets to `.env` yourself.** The wizard shows which variables its config reads. The values stay on your disk.
 3. **Run introspection from the browser.** Studio reads your schema's structure (tables and columns, never rows) and opens the Overview.
 
 </Steps>
+
+With a config but no schema artifact, the wizard skips the `.env` step and starts at introspection. If that config can't load, it shows the error to fix first, and you restart Studio once it's fixed.
 
 `npx askdb init` asks the same questions in the terminal and writes the same files. The [Studio reference](/reference/studio/#guided-setup) says what the wizard writes and installs, and how it picks a package manager.
 
@@ -51,7 +53,7 @@ The Overview shows the state of your schema artifact:
 - **Recent playground queries,** and cards for the **RAG index** and **Tenancy**.
 - **Suggested next actions,** such as describing a table or building the index.
 
-**Resync schema** runs introspection again with the connection in `askdb.config.ts`, as a flag-free `askdb introspect` does. It rebuilds `schema.json` and keeps your enrichment markdown.
+**Resync schema** runs introspection again with the connection in `askdb.config.ts`, as a flag-free `askdb introspect` does. It rebuilds `schema.json` and keeps your enrichment markdown, and any edits you haven't saved yet. A message above the cards says how many tables it read, or why it failed.
 
 ## Tables and enrichment
 
@@ -62,7 +64,7 @@ The Overview shows the state of your schema artifact:
 <figcaption>The Tables view: the table list, and the open table's Enrichment tab.</figcaption>
 </figure>
 
-The Tables view lists every table in your schema, grouped by schema, with a search box and filters for **Complete**, **Partial** and **Not started** tables. Select a table to open it in three tabs:
+The Tables view lists every table in your schema, grouped by schema, with a search box and filters for **Complete**, **Partial** and **Not started** tables. A table is **Complete** once it and every one of its columns have a description, and **Partial** once anything is written for it or a column. The Overview counts tables the same way. Select a table to open it in three tabs:
 
 - **Enrichment.** For the table: a description, aliases (the names people use when they ask), a primary entity, tags, common query language and example questions. For each column: a description, aliases and enum notes.
 - **Schema.** The columns with their types, nullability, primary key and sensitivity, and the table's relationships.

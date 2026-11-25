@@ -3,7 +3,15 @@
   "extends": ["//"],
   "tasks": {
     "test": {
-      "inputs": ["$TURBO_EXTENDS$", "$TURBO_ROOT$/examples/**/askdb.config.ts"]
+      // The scaffold plan's tests read @askdb/core's package.json for the `ai` and `zod` ranges a
+      // Prisma project must install, and src/example-configs.test.ts loads every example config.
+      // This package depends on neither, so list the files here: CI replays a cached `test` when
+      // its inputs are unchanged.
+      "inputs": [
+        "$TURBO_EXTENDS$",
+        "$TURBO_ROOT$/packages/core/package.json",
+        "$TURBO_ROOT$/examples/**/askdb.config.ts"
+      ]
     }
   }
 }

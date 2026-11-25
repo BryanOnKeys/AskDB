@@ -384,7 +384,7 @@ function describeWidth(opts: CliOptions, embedderConfig: EmbedderConfig, width: 
 function createMockEmbedder(dim: number): Embedder {
   return async (texts: string[]) => {
     return texts.map((text) => {
-      const v = new Array<number>(dim).fill(0);
+      const v = Array.from({ length: dim }, () => 0);
       const tokens = text.toLowerCase().match(/[a-z0-9_]+/g) ?? [];
       for (const token of tokens) {
         v[stableTokenHash(token) % dim] += 1;

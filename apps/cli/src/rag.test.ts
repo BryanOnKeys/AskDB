@@ -148,7 +148,7 @@ async function startEmbeddingServer(): Promise<{ baseUrl: string; requests: { mo
 }
 
 function lexicalVector(text: string, dim: number): number[] {
-  const vector = new Array<number>(dim).fill(0);
+  const vector = Array.from({ length: dim }, () => 0);
   for (const token of text.toLowerCase().match(/[a-z0-9_]+/g) ?? []) {
     vector[token.length % dim] += 1;
   }
