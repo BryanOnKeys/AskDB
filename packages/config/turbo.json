@@ -4,13 +4,16 @@
   "tasks": {
     "test": {
       // The scaffold plan's tests read @askdb/core's package.json for the `ai` and `zod` ranges a
-      // Prisma project must install, and src/example-configs.test.ts loads every example config.
-      // This package depends on neither, so list the files here: CI replays a cached `test` when
-      // its inputs are unchanged.
+      // Prisma project must install, and src/example-configs.test.ts loads every example config
+      // git tracks. This package depends on neither, so list the files here: CI replays a cached
+      // `test` when its inputs are unchanged. Listing inputs turns off Turbo's .gitignore
+      // handling, so leave out the lab's ignored scratch projects and installs.
       "inputs": [
         "$TURBO_EXTENDS$",
         "$TURBO_ROOT$/packages/core/package.json",
-        "$TURBO_ROOT$/examples/**/askdb.config.ts"
+        "$TURBO_ROOT$/examples/**/askdb.config.ts",
+        "!$TURBO_ROOT$/examples/**/.lab/**",
+        "!$TURBO_ROOT$/examples/**/node_modules/**"
       ]
     }
   }
