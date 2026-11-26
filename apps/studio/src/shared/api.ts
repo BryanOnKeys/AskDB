@@ -102,6 +102,10 @@ export type StudioRagStatusDto = {
   embedderId: string;
   expectedEmbedderId: string;
   hasIndex: boolean;
+  /**
+   * The index doesn't match the schema folder: true also when there is no index at all, so a
+   * caller that means "rebuild" checks `hasIndex` first (#1053).
+   */
   stale: boolean;
   updatedAt: string | null;
   chunksTotal: number;

@@ -1,5 +1,6 @@
 import type { EmbeddingModel, LanguageModel } from "ai";
 import type { AiReasoningSection, ReasoningSettings } from "./reasoning.js";
+// oxlint-disable-next-line no-unused-vars -- AiBaseUrlCredentialsError is imported for a JSDoc {@link}.
 import { refuseBaseUrlCredentials, type AiBaseUrlCredentialsError } from "./base-url.js";
 
 /*

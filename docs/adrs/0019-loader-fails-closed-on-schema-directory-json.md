@@ -1,47 +1,40 @@
-# ADR 0019 — `loadSchema()` fails closed on a stray JSON file in a schema directory
+# ADR 0019: The loader fails closed on a stray JSON file in a schema directory
 
-## Status
-
-Accepted (2026-11-04, maintainer decision in the #330 plan round; amended 2026-11 by [ADR 0027](0027-core-reads-schema-directory-with-exact-names.md): the guard counts a sibling in any case). Implemented in `packages/core/src/schema/v2/loader.ts` (`loadSchema`, `assertNotInSchemaDirectory`).
-
-## Context
-
-`loadSchema(path)` reads a JSON file that isn't a bundle in one of two ways. A file named `schema.json` loads its enclosing directory (since #186), so the sibling `tables/*.md`, `concepts.md` and `tenant-policy.md` apply. Any other JSON file loads as a standalone physical layer, with no sibling files.
-
-That split failed open twice (#330):
-
-- **The name check was case-sensitive.** On macOS and Windows (case-insensitive by default), `Schema.json` opens `schema.json`, but the check missed it. The file loaded standalone, so the tenant policy was dropped and `ask()` stopped requiring a `tenantScope`. Nothing reported an error.
-- **Any other name drops the siblings the same way.** `cp schema.json prod-schema.json` and `loadSchema("<dir>/prod-schema.json")` load without the tenant policy, and without every `sensitive: true` escalation in `tables/*.md`.
-
-Matching `schema.json` in any case fixes the first. The second needs a rule for a JSON file that isn't `schema.json` but sits in a schema directory.
-
-## Options considered
-
-### A. Throw when `tenant-policy.md`, `tables/` or `concepts.md` sits beside the file (chosen)
-
-The file is in a schema directory, and loading it alone would ignore files the directory loader reads. `SchemaParseError` names the file and the siblings, and says how to load it: pass the directory, rename the file to `schema.json`, or pass its content to `loadSchemaFromJson()` for only the physical layer. One rule: inside a schema directory, the JSON file must be `schema.json`.
-
-### B. Throw only when `tenant-policy.md` sits beside the file
-
-Rejected. Tenancy stays on, but a `tables/` beside the file still silently drops every front-matter `sensitive: true`, which exposes columns the author marked sensitive.
-
-### C. Throw for `tenant-policy.md` and `tables/`, not `concepts.md`
-
-Rejected. It is as safe as A, but the rule has two parts to explain, and a lone `concepts.md` is still dropped silently. A file in that position is a mistake either way.
-
-### D. Load the file, with a warning in `NormalizedSchemaV2.warnings`
-
-Rejected. Warnings are easy to miss, so tenant enforcement still turns off: the silent fail-open #186 set out to remove.
+**Status:** accepted · 2026-11-04
 
 ## Decision
 
-- A path whose basename is `schema.json` in any case loads its enclosing directory, and the physical layer is read from the path given (a file physically named `Schema.json` works on a case-sensitive filesystem too).
-- Any other JSON file that isn't a bundle throws `SchemaParseError` when its directory holds `tenant-policy.md`, `tables/` or `concepts.md`, in any case (amended by ADR 0027: on Linux a wrong-case `Tenant-Policy.md` escaped an exact-name check). Only a missing path (`ENOENT`) counts as absent; any other error while checking throws.
-- A bundle is self-contained, so it loads wherever it sits.
-- A directory path still needs a file named exactly `schema.json`. On a case-sensitive filesystem, a directory holding only `Schema.json` throws, as before.
+Inside a schema directory, the JSON file that `loadSchema()` reads must be `schema.json`. `loadSchema()` handles a JSON file path in one of four ways:
 
-## Consequences
+| The path is | `loadSchema()` |
+|---|---|
+| `schema.json`, in any case | Loads the enclosing directory, with its sibling files. |
+| A bundle | Loads it wherever it sits: a bundle holds all its parts. |
+| Another JSON file, with `tenant-policy.md`, `tables/` or `concepts.md` beside it in any case | Throws, and names the file and the siblings. |
+| Another JSON file, with none of them beside it | Loads it as a physical layer only. |
 
-- A host that loaded a renamed copy of `schema.json` from inside a schema directory now gets an error instead of a schema with no tenant policy. The `@askdb/core` changeset is a minor bump and names the change.
-- `loadSchemaFromJson()` remains the way to read only a physical layer, wherever the file sits.
-- A wrong-case sibling such as `Tenant-Policy.md` was ignored by this check and by the directory loader on a case-sensitive filesystem (#608). [ADR 0027](0027-core-reads-schema-directory-with-exact-names.md) makes the check count it and makes the directory loader throw on it.
+`loadSchemaFromJson()` stays the way to read only a physical layer, wherever the file sits.
+
+## Why
+
+- A copy such as `prod-schema.json` loaded without its siblings. The tenant policy and every `sensitive: true` in `tables/*.md` were dropped, with no error.
+- A dropped tenant policy means that `ask()` stops requiring a tenant scope. A file in that position is a mistake, so the load must refuse it.
+
+## Options
+
+| | Option | Why it lost |
+|---|---|---|
+| A | Throw when `tenant-policy.md`, `tables/` or `concepts.md` sits beside the file | **Chosen.** |
+| B | Throw only for `tenant-policy.md` | A `tables/` beside the file still drops every `sensitive: true` in table front-matter. |
+| C | Throw for `tenant-policy.md` and `tables/`, not `concepts.md` | The rule has two parts to explain, and a lone `concepts.md` is still dropped silently. |
+| D | Load the file with a warning | A warning is easy to miss, so tenant enforcement still turns off. |
+
+## Keep
+
+| Rule | Checked by |
+|---|---|
+| A JSON file in a schema directory never loads without its siblings. There is no warning-only fallback. | `packages/core/src/schema/v2/loader.test.ts` |
+| The guard counts a sibling in any case (ADR 0027). | `packages/core/src/schema/v2/loader.test.ts` |
+| A path named `schema.json` in any case loads its directory, and the physical layer comes from the path given. | `packages/core/src/schema/v2/loader.test.ts` |
+| A JSON file with no sibling schema files loads as a physical layer only. | `packages/core/src/schema/v2/loader.test.ts` |
+| A directory path needs a file named exactly `schema.json` (ADR 0027). | `packages/core/src/schema/v2/loader.test.ts` |

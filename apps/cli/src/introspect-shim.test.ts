@@ -49,11 +49,11 @@ registerHooks({
       ], { NODE_PATH: "" }, project);
 
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain("needs the optional peer dependency \`@askdb/prisma\`");
-      expect(result.stderr).toContain("Yarn Plug'n'Play");
-      const core = JSON.parse(readFileSync(join(repoRoot, "packages/core/package.json"), "utf8"));
-      const aiRange = core.peerDependencies.ai.split(" || ").at(-1);
-      expect(result.stderr).toContain(`yarn add @askdb/prisma "ai@${aiRange}" "zod@${core.dependencies.zod}"`);
+      expect(result.stderr).toContain("needs the optional peer dependency `@askdb/prisma`");
+      expect(result.stderr).toContain("npm install @askdb/prisma");
+      expect(result.stderr).toContain("pnpm add --allow-build=@prisma/engines @askdb/prisma");
+      expect(result.stderr).toContain("For Yarn Plug'n'Play, your project also needs `ai`");
+      expect(result.stderr).toContain("Add any missing packages and keep compatible installed versions.");
     } finally {
       rmSync(project, { recursive: true, force: true });
     }

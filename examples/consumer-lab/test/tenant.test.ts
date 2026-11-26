@@ -35,7 +35,7 @@ import { bindPreparedQuery, loadSchema, TenantGuardrailError, TenantScopeError }
 import mysql from "mysql2/promise";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
-import { askRaw, settle, type AskExtras, type AskResult, type Settled } from "../src/ask.js";
+import { askRaw, settle, type AskExtras, type AskResult } from "../src/ask.js";
 import { needsCapability } from "../src/capabilities.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../src/dialects.js";
 import { connectionUrl, normalizeRows } from "../src/fixture.js";

@@ -262,6 +262,8 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
 
   useEffect(() => {
     void refreshExecuteStatus();
+    // The saved history, so the Playground and the Overview show it before the first ask.
+    void refreshHistory();
   }, []); // intentionally empty — load once on mount
 
   async function handleAsk() {

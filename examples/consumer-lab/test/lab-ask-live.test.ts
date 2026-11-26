@@ -20,7 +20,7 @@
  * live answer with no verdict, or a miss that fails the exit code; a refusal that runs
  * introspection first or falls back to replay; and an exported `LAB_LIVE_MODEL=1` that makes
  * every `lab ask` a paid call.
- * Not covered elsewhere: `lab-ask-replay.test.ts` covers the replay model only; `live.test.ts`
+ * Not covered elsewhere: `lab-ask-replay-*.test.ts` cover the replay model only; `live.test.ts`
  * asks the real model, only with `LAB_LIVE_MODEL=1`, and never through `lab ask`;
  * `record.test.ts` owns `liveSettings` itself (the CI and no-key rules) and `grade.test.ts`
  * the verdicts, which this checks only as `lab ask` prints them.
@@ -37,7 +37,6 @@
  *
  * Needs `cli-introspect-engine` (the SQLite artifact) and an installed lab (`pnpm lab:use .`).
  */
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -46,6 +45,7 @@ import { needsCapability } from "../src/capabilities.js";
 import { findQuestion } from "../src/model/catalog.js";
 import { OPENAI_BASE_URL, type LiveSettings } from "../src/model/live.js";
 import { LAB_ROOT } from "../src/paths.js";
+import { runLabSync } from "./support/lab-cli.js";
 import { installOpenAiStub } from "./support/stub-openai-fetch.mjs";
 import { STUB_KEY, stubOpenAiEnv, type StubReplies } from "./support/stub-openai.js";
 
@@ -121,12 +121,7 @@ describe("[sqlite] lab-ask-live", () => {
 
 /** `pnpm lab ask`, spawned the way `pnpm lab` runs it. With no `env`, it has no key from the shell or `.env.live` (an empty variable wins over the file). */
 function labAsk(args: string[], env: Record<string, string> = {}) {
-  const run = spawnSync(join(LAB_ROOT, "node_modules", ".bin", "tsx"), [join(LAB_ROOT, "src", "lab-cli.ts"), "ask", "--db", "sqlite", ...args], {
-    cwd: LAB_ROOT,
-    encoding: "utf8",
-    env: { ...process.env, CI: "", GITHUB_ACTIONS: "", OPENAI_API_KEY: "", LAB_LIVE_MODEL: "", ...env },
-  });
-  return { status: run.status, stdout: run.stdout, stderr: run.stderr };
+  return runLabSync(["ask", "--db", "sqlite", ...args], { env: { CI: "", GITHUB_ACTIONS: "", OPENAI_API_KEY: "", LAB_LIVE_MODEL: "", ...env } });
 }
 
 describe("[sqlite] lab-ask-live-spawned", () => {

@@ -19,6 +19,7 @@ import {
 import { generateSelectSqlForAsk } from "./sql/generate.js";
 import { enforceGuardrails } from "./sql/guardrails.js";
 import { assertRenderedSql, renderTemplate, renderTenantSql, tenantRendering, writePreparedQuery } from "./sql/checked-statement.js";
+// oxlint-disable-next-line no-unused-vars -- DEFAULT_TENANT_SQL_MODE is imported for a JSDoc {@link}.
 import type { DEFAULT_TENANT_SQL_MODE, TenantSqlOutputMode, TenantBinding } from "./sql/tenant-placeholders.js";
 import {
   expandTenantScope,

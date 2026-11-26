@@ -4,9 +4,17 @@
 //
 //   node scripts/test-summary.mjs "<title>" >> "$GITHUB_STEP_SUMMARY"
 //
-// Failing packages sort first. Failed test names are listed under the table. Workspace
-// packages whose `test` script runs vitest but that recorded nothing (a Turbo cache hit,
-// or a run that stopped before their tests finished) get a row too, so none go missing.
+// Failing packages sort first. Failed test names are listed under the table.
+//
+// A package whose `test` Turbo replayed from its cache didn't run vitest, so it has no record
+// in `ASKDB_TEST_SUMMARY_DIR`. Turbo restored the copy the reporter keeps in the package
+// (`.vitest/test-summary.json`, the `test` task's declared output) instead, and that becomes a
+// "cached" row with the counts from the run that was cached. Turbo caches only tasks that
+// succeeded, so a cached row never hides a failure. CI checks out a clean tree, so that file is
+// there only when this run's vitest wrote it (and then the fresh record wins) or Turbo restored it.
+//
+// Workspace packages whose `test` script runs vitest but that have neither (a run that stopped
+// before their tests finished) get a row too, so none go missing.
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -14,26 +22,35 @@ import { join } from "node:path";
 const title = process.argv[2] ?? "Tests";
 const dir = process.env.ASKDB_TEST_SUMMARY_DIR;
 
-const records =
+const fresh =
   dir && existsSync(dir)
     ? readdirSync(dir)
         .filter((f) => f.endsWith(".json"))
         .map((f) => JSON.parse(readFileSync(join(dir, f), "utf8")))
     : [];
 
-/** Names of workspace packages whose `test` script runs vitest. */
+/** Workspace packages whose `test` script runs vitest, as `{ name, path }`. */
 function vitestPackages() {
   const projects = JSON.parse(execFileSync("pnpm", ["-r", "ls", "--json", "--depth", "-1"], { encoding: "utf8" }));
-  return projects
-    .filter((p) => p.name && /\bvitest\b/.test(JSON.parse(readFileSync(join(p.path, "package.json"), "utf8")).scripts?.test ?? ""))
-    .map((p) => p.name);
+  return projects.filter(
+    (p) => p.name && /\bvitest\b/.test(JSON.parse(readFileSync(join(p.path, "package.json"), "utf8")).scripts?.test ?? ""),
+  );
 }
 
-const recorded = new Set(records.map((r) => r.package));
-const missing = records.length > 0 ? vitestPackages().filter((name) => !recorded.has(name)).sort() : [];
+const ran = new Set(fresh.map((r) => r.package));
+const cached = [];
+const missing = [];
+for (const { name, path } of vitestPackages()) {
+  if (ran.has(name)) continue;
+  const replayed = join(path, ".vitest", "test-summary.json");
+  if (existsSync(replayed)) cached.push({ ...JSON.parse(readFileSync(replayed, "utf8")), package: name, cached: true });
+  else missing.push(name);
+}
+missing.sort();
+const records = [...fresh, ...cached];
 
 const failed = (r) => r.files.failed > 0 || r.tests.failed > 0 || r.unhandledErrors > 0;
-const status = (r) => (failed(r) ? "❌" : r.tests.passed === 0 ? "⏭️" : "✅");
+const status = (r) => (failed(r) ? "❌" : r.cached ? "♻️" : r.tests.passed === 0 ? "⏭️" : "✅");
 const seconds = (ms) => `${(ms / 1000).toFixed(1)}s`;
 
 const lines = [`## ${title}`, ""];
@@ -50,14 +67,23 @@ if (records.length === 0) {
     total.failed += r.tests.failed;
     total.skipped += r.tests.skipped;
     const errors = r.unhandledErrors ? ` (+${r.unhandledErrors} unhandled error${r.unhandledErrors === 1 ? "" : "s"})` : "";
+    const time = r.cached ? "cached" : seconds(r.durationMs);
     lines.push(
-      `| ${status(r)} | \`${r.package}\` | ${files} | ${r.tests.passed} | ${r.tests.failed}${errors} | ${r.tests.skipped} | ${seconds(r.durationMs)} |`,
+      `| ${status(r)} | \`${r.package}\` | ${files} | ${r.tests.passed} | ${r.tests.failed}${errors} | ${r.tests.skipped} | ${time} |`,
     );
   }
   for (const name of missing) lines.push(`| ⚪ | \`${name}\` | – | – | – | – | – |`);
-  lines.push(`| | **Total (${records.length} packages)** | **${total.files}** | **${total.passed}** | **${total.failed}** | **${total.skipped}** | |`);
+  const packages = `${records.length} package${records.length === 1 ? "" : "s"}`;
+  const counted = cached.length > 0 ? `${packages}, ${cached.length} cached` : packages;
+  lines.push(`| | **Total (${counted})** | **${total.files}** | **${total.passed}** | **${total.failed}** | **${total.skipped}** | |`);
+  if (cached.length > 0) {
+    lines.push(
+      "",
+      "♻️ = cached: the package's test inputs haven't changed since a run that passed, so Turbo replayed that run instead of running vitest. Its counts are from that run.",
+    );
+  }
   if (missing.length > 0) {
-    lines.push("", "⚪ = no result recorded: a Turbo cache hit, or the run stopped before this package's tests finished.");
+    lines.push("", "⚪ = no result recorded: this package's tests didn't finish in this run.");
   }
   if (records.some((r) => status(r) === "⏭️")) {
     lines.push("", "⏭️ = every test in the package skipped (for example, integration suites without a database).");

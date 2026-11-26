@@ -5,6 +5,11 @@
 // `scripts/test-summary.mjs` renders them as one table at the end of the CI job.
 // Without `ASKDB_TEST_SUMMARY_DIR` it does nothing.
 //
+// It writes the same record to `.vitest/test-summary.json` in the package too, which
+// turbo.json declares as the `test` task's output. When CI replays a package's `test`
+// from Turbo's cache, vitest doesn't run, but Turbo restores that file, so the table
+// can show the package as cached, with the counts from the run that was cached.
+//
 // Plain ESM (not `.ts`), like `integration.mjs`, so it loads without a build step.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -49,15 +54,18 @@ export default class SummaryReporter {
       }
     }
 
-    mkdirSync(dir, { recursive: true });
-    const record = {
+    const record = `${JSON.stringify({
       package: this.packageName,
       files,
       tests,
       failures,
       unhandledErrors: unhandledErrors.length,
       durationMs: Date.now() - this.startedAt,
-    };
-    writeFileSync(join(dir, `${this.packageName.replace(/[^a-z0-9._-]+/gi, "_")}.json`), `${JSON.stringify(record)}\n`);
+    })}\n`;
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, `${this.packageName.replace(/[^a-z0-9._-]+/gi, "_")}.json`), record);
+    // Turbo runs vitest in the package directory; see the header for why this copy exists.
+    mkdirSync(".vitest", { recursive: true });
+    writeFileSync(join(".vitest", "test-summary.json"), record);
   }
 }

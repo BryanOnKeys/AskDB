@@ -1,4 +1,5 @@
 import { configDefaults, defineConfig } from "vitest/config";
+import { MatrixSequencer } from "./src/matrix-shards.js";
 
 export default defineConfig({
   test: {
@@ -9,6 +10,8 @@ export default defineConfig({
     reporters: ["verbose"],
     // The fixture's timestamps are naive UTC; every driver must see them unshifted.
     env: { TZ: "UTC" },
+    // `--shard=<i>/<n>` deals the files out by what each cost in CI, and every run starts the costliest first.
+    sequence: { sequencer: MatrixSequencer },
     testTimeout: 120_000,
     hookTimeout: 300_000,
   },

@@ -12,6 +12,8 @@ packages:
   - "!examples/find-the-right-tables"
   # Shared multi-engine test fixture (replaces Pagila); see fixtures/multi-engine/README.md.
   - "fixtures/multi-engine"
+  # Scripted replays of the verify-askdb feature map (private; never published).
+  - "e2e"
 publicHoistPattern:
   - "*turbo*"
 # Transitive-dependency pins we carry ahead of upstream.
@@ -30,20 +32,24 @@ overrides:
   #   Drop this once tedious raises its own `@azure/identity` floor to 4.14.1.
   "@azure/identity": ^4.14.1
   # minimatch: GHSA-g3hv-75wg-m249 (moderate, Dependabot alert #118) — denial of service via globparts amplification.
-  #   Patched in 11.0.1. Dev only: reached through Studio's ESLint toolchain and react-doctor (not published).
-  #   eslint 10.14, @eslint/config-array 0.23 and @typescript-eslint/typescript-estree 8.72 still require minimatch ^10;
+  #   Patched in 11.0.1. Dev only: reached through react-doctor > eslint-plugin-react-hooks > eslint (not published).
+  #   eslint 10.15 and @eslint/config-array 0.23 still require minimatch ^10;
   #   minimatch 11 keeps the `Minimatch` class and the `minimatch()` function they call. Drop each entry once its parent
   #   accepts ^11.0.1.
   eslint>minimatch: ^11.0.1
   "@eslint/config-array>minimatch": ^11.0.1
-  "@typescript-eslint/typescript-estree>minimatch": ^11.0.1
+  # effect: GHSA-7589-6fvf-x4pw (high) — ReDoS in the regex Schema.TemplateLiteral compiles. Patched in 3.22.1.
+  #   Reached through @askdb/prisma > @prisma/internals > @prisma/config, which pins effect 3.20.0 exactly (still so in
+  #   @prisma/config 7.10.1, the latest release on 2026-11-19). 3.22.1 is a minor on the same 3.x line. The override only fixes this repo's
+  #   lockfile: hosts that install @askdb/prisma resolve @prisma/config's own pin. Drop it once @prisma/config moves
+  #   to effect >= 3.22.1.
+  "@prisma/config>effect": ^3.22.1
 allowBuilds:
   '@prisma/engines': true
   better-sqlite3: true
   esbuild: true
   msgpackr-extract: true
   sharp: true
-  unrs-resolver: true
 minimumReleaseAge: 720
 minimumReleaseAgeExclude:
   - '@ai-sdk/gateway@3.0.130'

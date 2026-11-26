@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { basename, isAbsolute, join, relative } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { getAskDbRuntimeConfig } from "@askdb/config";
+import { PRISMA_YARN_PNP_HINT } from "@askdb/config/scaffold";
 import { formatTenantPolicyWarning, loadSchema, type TenantPolicyWarning } from "@askdb/core";
 import {
   connectorPackageMissingMessage,
@@ -24,7 +25,7 @@ import { sqlServerConnectorProvider } from "@askdb/sqlserver";
 import { errorMessage } from "./cli-error.js";
 import { runCommand, type CommandSpec, type Flag } from "./command.js";
 import { createCliLogger, loggingFlags, type CliLoggingFlags } from "./logger.js";
-import { PRISMA_BUILD_APPROVALS, PRISMA_YARN_PNP_HINT } from "./prisma-install.js";
+import { PRISMA_BUILD_APPROVALS } from "./prisma-install.js";
 
 /**
  * `@askdb/prisma` is an optional peer of `askdb`: it pulls in Prisma, whose

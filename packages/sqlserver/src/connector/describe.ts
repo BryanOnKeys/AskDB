@@ -51,8 +51,8 @@ export type DescribeSqlServerInput = {
   schemaId?: string;
 };
 
-// sys.* catalog queries. Tables/views, columns (no comments/defaults yet —
-// follow-up), PKs + UNIQUE constraints via sys.indexes, FKs via sys.foreign_keys,
+// sys.* catalog queries. Tables/views, columns (no comments or defaults:
+// #1072), PKs + UNIQUE constraints via sys.indexes, FKs via sys.foreign_keys,
 // non-PK/non-UNIQUE indexes for completeness.
 //
 // Objects with `is_ms_shipped = 1` are created by SQL Server itself or its

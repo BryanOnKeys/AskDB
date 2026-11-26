@@ -7,6 +7,16 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 What each AskDB release asks of your app, newest first. Each section lists only the changes that need something from you, and the package CHANGELOGs list everything else. [Upgrade AskDB](/guides/upgrading/) says how to apply them.
 
+## 1.0.0-rc.4
+
+### Write `httpApi.listen.port` as a decimal number
+
+`httpApi.listen.port` now accepts only a number, or a string of decimal digits, from 0 to 65535 ([#1030](https://github.com/Ygilany/AskDB/issues/1030)). Before, a string went through `Number()`, so `"0x50"` bound port 80, `"1e3"` bound 1000 and `"+80"` bound 80. Now config loading fails with `askdb.config: invalid httpApi.listen.port …`, the same strictness `askdb-http --port` has had since [#873](https://github.com/Ygilany/AskDB/issues/873).
+
+- **If a config sets the port from a hex, exponent or signed string,** write it as a plain decimal number (`80`) or string (`"80"`).
+- **A number or string with surrounding whitespace still loads.** `" 80 "` is read as 80, so a port from an environment variable with a trailing newline keeps working. The `--port` flag rejects it.
+- **`0` still asks the OS for a free port,** and `NaN` still counts as unset.
+
 ## 1.0.0-rc.3
 
 ### Expect `UNCHECKABLE_RELATION` for Postgres statistics relations

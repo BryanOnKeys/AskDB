@@ -1,0 +1,25 @@
+{
+  "name": "@askdb/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Scripted replays of verify-askdb's feature map: the askdb CLI and HTTP API (Vitest) and Studio (Playwright), each in a disposable project with a fake model.",
+  "type": "module",
+  "scripts": {
+    "e2e": "vitest run --config vitest.config.ts && playwright test",
+    "e2e:vitest": "vitest run --config vitest.config.ts",
+    "e2e:studio": "playwright test",
+    "lint": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@askdb/config": "workspace:*",
+    "@askdb/http-api": "workspace:*",
+    "@askdb/studio": "workspace:*",
+    "@playwright/test": "1.65.1",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^22.20.5",
+    "askdb": "workspace:*",
+    "better-sqlite3": "^13.0.3",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.5"
+  }
+}

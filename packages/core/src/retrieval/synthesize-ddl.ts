@@ -18,7 +18,7 @@ import type { RetrievedResult } from "./types.js";
  *   1. Each table referenced by any retrieved chunk gets a TABLE block with
  *      its full column definitions (so the model has complete column lists).
  *      Each column line carries the schema's own `-- aliases / values / desc`
- *      annotation, with the column's note (ADR 0042, amended for #898); a
+ *      annotation, with the column's note (ADR 0042, #898); a
  *      retrieved column chunk only picks its table.
  *      Then the table's foreign keys to other shown tables, as the
  *      full-schema prompt prints them (#898).

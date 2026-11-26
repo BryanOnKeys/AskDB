@@ -7,6 +7,7 @@ export type { ColumnDraft, TableDraft } from "./draft.js";
 export {
   buildSuggestionContext,
   buildSuggestionTarget,
+  SuggestSourceNotFoundError,
 } from "./suggest.js";
 export type {
   ColumnSuggestField,

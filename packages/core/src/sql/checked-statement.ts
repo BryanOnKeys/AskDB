@@ -143,7 +143,7 @@ export type RenderedTemplate = {
  * tenant rendering, the tenant IDs into `unboundSql` as driver markers (`unboundSql` always
  * binds them; `tenant.mode` governs only the bound form, through {@link renderTenantSql}).
  *
- * Then asserts that rendering only swapped placeholders (ADR 0010, decision 0): no
+ * Then asserts that rendering only swapped placeholders (ADR 0010): no
  * placeholder is left in either form, except the tenant placeholders `businessSql` keeps for
  * {@link renderTenantSql}, and both forms pass `validateSelectSql`.
  *
