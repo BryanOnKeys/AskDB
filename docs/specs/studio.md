@@ -56,6 +56,15 @@ The product shape follows the Prisma Studio pattern: a CLI command starts a loca
 | `POST` | `/api/execute` | Run a validated SELECT (opt-in; `403` when `studio.execute.enabled` is false) |
 | `POST` | `/api/execute/install-driver` | Install the configured driver package (loopback only; execute must be enabled) |
 
+**`POST /api/suggest` errors.** Unknown references are rejected before AI configuration is resolved and before any model is created:
+
+- An unknown `source.tableId` returns HTTP 404 (`No such table: <tableId>`).
+- An unknown `source.columnId` returns HTTP 404 (`Column not found: <columnId> in <schema>.<table>`).
+- A `source.columnId` must belong to the table named by `source.tableId`; a real column of another table still returns HTTP 404 scoped to the requested table.
+- Missing AI configuration retains its existing HTTP 400 behaviour (a message naming the missing setting).
+
+These are `{"error": {"message": "…"}}` responses with no typed code, so callers tell them apart by status (#380).
+
 **Server startup:**
 ```bash
 askdb-studio --schema <path>   # default port 5556
@@ -72,7 +81,7 @@ Studio is a local dev tool whose API can execute SQL against the configured data
 - **Origin / content type:** non-GET/HEAD/OPTIONS `/api/*` requests with an `Origin` header must be same-origin with the request's `Host` (`403` otherwise); requests with a body must be `Content-Type: application/json` (`415` otherwise), which forces a CORS preflight that Studio never answers.
 - **Defense in depth:** setup (`/api/setup/*`), resync (`POST /api/introspect`), and driver install stay loopback-client-only. `index.html` is served with `X-Frame-Options: DENY`.
 - **Known limit:** on a non-loopback bind, anyone who can load the page from an allowed address gets the token. The token protects against cross-site browser attacks, not against untrusted networks.
-- **Design record:** why this is an in-page per-launch token rather than a Jupyter-style login token, the accepted limits, and the triggers for revisiting are in [ADR 0009](../adrs/0009-studio-local-api-protection.md).
+- **Design record:** why this is an in-page per-launch token rather than a Jupyter-style login token, and the options that lost are in [ADR 0009](../adrs/0009-studio-local-api-protection.md). The triggers for revisiting it are in #1076.
 - **Setup config writer:** every value interpolated into the generated `askdb.config.ts` is emitted with `JSON.stringify` (the file is later executed via jiti); env names must match `^[A-Z][A-Z0-9_]*$`, and paths reject control characters. `askdb init` uses the same escaping.
 - **Request bodies:** `readJson` rejects bodies over 1 MiB (`MAX_JSON_BODY_BYTES`) with `413`: early on a declared `Content-Length`, otherwise while streaming (the rest of the body is drained, not buffered).
 - **Playground history:** `POST /api/history` copies only the known `PlaygroundHistoryEntry` fields, with type and length checks. `id`/`timestamp` are server-assigned. Before writing `playground-history.json`, Studio makes sure the schema dir's `.gitignore` lists it. If there's no `.gitignore`, Studio writes one that also ignores `.env`, `.env.*`, and `!.env.example` (the plan-043 rules; the `.env` rules are skipped when the schema dir is the project root). If a `.gitignore` exists, Studio adds the entry at the end and keeps every existing byte. Both files are written with `@askdb/core`'s `saveSchemaFile()` ([ADR 0028](../adrs/0028-core-writes-schema-directory-files.md)), so a symbolic link at either one is refused, not followed. A refused `.gitignore` write is non-fatal: the history still saves. A refused history write (`POST /api/history` or `DELETE /api/history/:id`) fails with `500` and the refusal message.
@@ -105,7 +114,7 @@ These guards narrow the blast radius. They don't replace a read-only database ro
 - `@askdb/studio` depends on `@askdb/enrich` for all workspace logic (package assertion).
 - API contract tests: each endpoint returns the documented shape. Error responses are `{ "error": { "message": "…" } }` with no typed code, so callers tell them apart by status (#380).
 - Schema editing: `POST /api/tables/:tableId` saves draft and reloads workspace from disk; reloading Studio shows saved values.
-- AI suggestion: `POST /api/suggest` returns candidates; missing AI config returns `400` with a message naming the missing setting, not a 500.
+- AI suggestion: `POST /api/suggest` returns candidates; unknown table or column IDs return `404` (a column ID must belong to the table named by `tableId`), and these checks run before AI configuration is resolved; missing AI config returns `400` with a message naming the missing setting, not a 500.
 - RAG: `POST /api/rag/index` builds index with mock or configured embedder; `POST /api/rag/query` returns scored chunks.
 - Ask: `POST /api/ask` returns SQL and warnings; works with `ASKDB_MOCK_SQL` without a live model.
 - Request guard: spoofed `Host` → `403`; cross-origin POST → `403`; `text/plain` POST → `415`/`403`; missing or wrong token → `403`; served `index.html` contains the token.

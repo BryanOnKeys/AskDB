@@ -2,11 +2,11 @@ import { createContext, use, useCallback, useEffect, useEffectEvent, useMemo, us
 import type { ReactNode } from "react";
 import type { ChunkType } from "@askdb/rag";
 import type { RagQueryResponse, StudioRagStatusDto, StudioRequestUsageDto } from "@/shared/api";
+import { STUDIO_CHUNK_TYPES } from "@/shared/rag";
 import { buildRagIndex, getRagStatus, queryRag } from "../api";
 import { formatNumber } from "../lib/format";
 import type { StatusMessage } from "./workspace-context";
 
-const CHUNK_TYPES: ChunkType[] = ["table", "column", "cql", "question", "concept", "relationship", "tenant-policy"];
 
 interface RagContextValue {
   ragStatus: StudioRagStatusDto | null;
@@ -21,7 +21,7 @@ interface RagContextValue {
   ragIndexUsage: StudioRequestUsageDto | null;
   ragAvailable: boolean;
   busy: Set<string>;
-  allChunkTypes: ChunkType[];
+  allChunkTypes: readonly ChunkType[];
 
   refreshRagStatus: () => Promise<void>;
   handleBuildRag: () => Promise<void>;
@@ -163,7 +163,7 @@ export function RagProvider({ children }: { children: ReactNode }) {
   const value = useMemo<RagContextValue>(() => ({
     ragStatus, ragMessage, ragQuestion, setRagQuestion, ragK, setRagK,
     ragTypes, setRagTypes, ragResults, ragIndexUsage, ragAvailable, busy,
-    allChunkTypes: CHUNK_TYPES,
+    allChunkTypes: STUDIO_CHUNK_TYPES,
     refreshRagStatus, handleBuildRag, handleQueryRag,
   }), [
     busy, handleBuildRag, handleQueryRag, ragAvailable, ragIndexUsage, ragK,

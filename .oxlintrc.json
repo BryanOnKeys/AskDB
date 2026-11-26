@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "unicorn", "oxc"],
+  "categories": {
+    "correctness": "error"
+  },
+  "jsPlugins": ["./scripts/oxlint/askdb-comments.mjs"],
+  "rules": {
+    "askdb/deferred-work-names-an-issue": "error",
+    "askdb/adr-citation-resolves": "error"
+  }
+}

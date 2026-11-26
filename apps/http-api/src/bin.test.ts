@@ -65,19 +65,22 @@ describe("askdb-http startup errors", () => {
     },
   );
 
-  it("prints a reachable listening URL when the config requests port 0", async () => {
+  it.each([
+    { source: "config", configuredPort: 0, args: [] },
+    { source: "--port", configuredPort: 1, args: ["--port", "0"] },
+  ])("prints a reachable listening URL when $source requests port 0", async ({ configuredPort, args }) => {
     scratch = mkdtempSync(join(tmpdir(), "askdb-http-bin-"));
     writeFileSync(
       join(scratch, "askdb.config.mjs"),
       `export default {
   ai: { provider: "openai", providerConfig: { openai: { apiKey: "" } } },
   introspection: { provider: "postgres", providerConfig: { postgres: {} } },
-  httpApi: { listen: { host: "127.0.0.1", port: 0 } },
+  httpApi: { listen: { host: "127.0.0.1", port: ${configuredPort} } },
 };
 `,
     );
 
-    const child = spawn(process.execPath, [bin], { cwd: scratch, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [bin, ...args], { cwd: scratch, stdio: ["ignore", "pipe", "pipe"] });
     const closed = once(child, "close");
     let stdout = "";
     let stderr = "";
@@ -99,6 +102,7 @@ describe("askdb-http startup errors", () => {
       );
 
       expect(Number(url.port || 80)).toBeGreaterThan(0);
+      expect(Number(url.port || 80)).not.toBe(configuredPort);
       const response = await fetch(new URL("/health", url), { signal: AbortSignal.timeout(5_000) });
       expect(response.status).toBe(200);
       expect(await response.json()).toEqual({ ok: true });

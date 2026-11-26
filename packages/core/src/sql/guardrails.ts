@@ -32,7 +32,7 @@ import { tenantRuleWarnings, type TenantGuardrailResult } from "./tenant-guardra
 import { validateSelectSql } from "./validate.js";
 
 /**
- * The enforcement step (ADR 0010, decisions 1–4). `enforceGuardrails()` is the one call
+ * The enforcement step (ADR 0010). `enforceGuardrails()` is the one call
  * each enforcement point makes: `ask()`, `generateSelectSql()` and `bindPreparedQuery()`.
  * It picks the checks and the point from `path`, runs the checks on every form, decides
  * through `decide` (`guardrail-decide.ts`), logs, and throws the typed error on `deny`.
@@ -175,7 +175,7 @@ const CHECKS: Record<GuardrailCheckId, GuardrailCheck> = {
 const FORMS: readonly GuardrailForm[] = ["sql", "template"];
 
 /**
- * ADR 0010, decision 3: which checks each enforcement point runs, and the modes `decide`
+ * ADR 0010: which checks each enforcement point runs, and the modes `decide`
  * reads there. `ask()` with a custom `AskDialect` has no `dialect`, so no read-only check;
  * `generateSelectSql()` takes no sensitive mode, so no sensitive check; `acceptWarnings`
  * means something at rebind only.

@@ -27,7 +27,7 @@ export type BootstrapAskDbEnvOptions = {
   /**
    * Explicit `.env` file paths to try in order. The first one that exists and loads wins; one that
    * exists but fails to load is skipped without a report. When none loads, the `.env` in the
-   * process's working directory is tried. When omitted, loads `${cwd}/.env` only.
+   * supplied working directory (`cwd`) is tried. When omitted, loads `${cwd}/.env` only.
    */
   dotenvCandidatePaths?: readonly string[];
   /**
@@ -81,8 +81,10 @@ export function bootstrapAskDbEnv(options: BootstrapAskDbEnvOptions = {}): {
       }
     }
     if (dotenvPath === undefined) {
-      const { error } = dotenv.config(DOTENV_LOAD_OPTIONS);
+      const path = join(cwd, ".env");
+      const { error } = dotenv.config({ ...DOTENV_LOAD_OPTIONS, path });
       if (error) handleDotenvError(error, nonFatal);
+      else dotenvPath = path;
     }
   } else {
     const path = join(cwd, ".env");

@@ -618,6 +618,7 @@ describe("workspace table filenames", () => {
     ]);
     const ws = loadWorkspace(schemaDir);
     for (const t of ws.tables) {
+      // oxlint-disable-next-line no-control-regex -- the test checks that a file name has no NUL.
       expect(t.filename).not.toMatch(/[/\\\u0000]/);
       expect(t.filename.startsWith(".")).toBe(false);
     }

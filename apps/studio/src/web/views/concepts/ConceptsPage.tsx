@@ -386,7 +386,7 @@ function ConceptDetail({
             <h3>{concept.label}</h3>
             <Badge variant="outline">{concept.id}</Badge>
           </div>
-          <button type="button" className="btn ghost sm" onClick={onRemove} title="Remove concept" style={{ color: "var(--red-600)" }}>
+          <button type="button" className="btn ghost sm" onClick={onRemove} title="Remove concept" aria-label="Remove concept" style={{ color: "var(--red-600)" }}>
             Remove
           </button>
         </div>
@@ -479,6 +479,8 @@ function LinksInput({
   const wrapperRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  // Set when focus moves to the search box only to keep it out of <body>, not to search.
+  const focusWithoutOpening = useRef(false);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -580,12 +582,22 @@ function LinksInput({
               <button
                 type="button"
                 className="links-chip-remove"
+                // mousedown keeps focus in the search box; the removal is on click, so Enter and
+                // Space work too (#1049).
                 onMouseDown={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
                   removeLink(id);
+                  // The button goes away with its chip; keep focus in the links box, not <body>,
+                  // without opening the list over the rest of the form.
+                  focusWithoutOpening.current = true;
+                  inputRef.current?.focus();
                 }}
                 title="Remove"
+                aria-label={`Remove link to ${labelFor(id)}`}
               >
                 <X size={10} />
               </button>
@@ -604,8 +616,12 @@ function LinksInput({
           className="links-search-input"
           placeholder={value.length ? "Add another…" : "Search tables or columns…"}
           value={query}
-          onChange={(e) => { setQuery(e.target.value); setHighlightIndex(0); }}
-          onFocus={() => setOpen(true)}
+          // Typing reopens the list: after a pick the box keeps focus, so onFocus alone left it shut.
+          onChange={(e) => { setQuery(e.target.value); setHighlightIndex(0); setOpen(true); }}
+          onFocus={() => {
+            if (focusWithoutOpening.current) focusWithoutOpening.current = false;
+            else setOpen(true);
+          }}
           onKeyDown={handleKeyDown}
         />
       </div>

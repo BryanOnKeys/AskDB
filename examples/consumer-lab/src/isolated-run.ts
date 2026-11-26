@@ -40,7 +40,7 @@ async function run(command: string, args: string[], cwd = LAB_ROOT): Promise<voi
     child = spawn(command, args, { cwd, env, stdio: "inherit", detached: true });
     const deadline = setTimeout(stopChild, 10 * 60_000);
     child.on("error", (error) => { clearTimeout(deadline); reject(error); });
-    child.on("exit", (code, signal) => { clearTimeout(deadline); child = undefined; code === 0 ? resolve() : reject(new Error(`${command} exited ${code ?? signal}`)); });
+    child.on("exit", (code, signal) => { clearTimeout(deadline); child = undefined; if (code === 0) resolve(); else reject(new Error(`${command} exited ${code ?? signal}`)); });
   });
 }
 async function timed(label: string, fn: () => Promise<void>): Promise<void> {

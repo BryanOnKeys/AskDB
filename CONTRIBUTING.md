@@ -16,6 +16,8 @@ If `pnpm build` fails with **Cannot find module `.../node_modules/turbo/bin/turb
 
 Use Node 22.23.4 or newer and pnpm 11. The published libraries support Node `>=22.23.4`; CI builds and runs the unit suites on Node 22 (floor), 24 (Maintenance LTS) and 26 (Active LTS). Optional Postgres fixtures live under `fixtures/` for integration checks.
 
+`pnpm e2e` runs the scripted replays in `e2e/` (the `askdb` CLI, the HTTP API and Studio, each in a disposable project with a fake model; ADR 0052); run `pnpm -C e2e exec playwright install chromium` once first. The `verify-askdb` skill (`.agents/skills/verify-askdb/`) is the agent-driven side of the same checks.
+
 `pnpm test` runs each package's `test` task through Turbo, which first builds that package and its workspace dependencies (`test` depends on `build` and `^build`). Tests that spawn `apps/cli/dist/cli.js` rely on that; if you run `vitest` directly inside a package, run `pnpm build` first.
 
 ## Integration Tests
@@ -34,6 +36,8 @@ The SQLite suite needs no server; it only needs the optional `better-sqlite3` na
 Set `ASKDB_REQUIRE_INTEGRATION=1` to make a missing prerequisite (an unset URL, or a `better-sqlite3` that fails to load) **fail** the suite instead of skipping it. CI sets it so a misconfigured job can't pass by running no integration tests.
 
 Turbo runs tasks in strict env mode: only variables listed in the `test` task's `env` in [`turbo.json`](turbo.json) reach vitest. If you add an integration suite gated on a new variable, add the variable there and gate the suite with `integrationSuite()` from [`scripts/test-utils/integration.mjs`](scripts/test-utils/integration.mjs).
+
+CI caches each package's `lint` and `test` results in Turbo's remote cache and replays them while the task's inputs are unchanged, so a push re-runs only the packages it affects (the test summary marks the replayed ones as cached). A task's inputs are its package's files, its dependencies' builds, the `env` above, and the extra files `turbo.json` lists: `tsconfig.base.json` for every task, `scripts/test-utils/` for `lint` and `test`, and the root `vitest.config.ts`, `askdb.config.ts` and `fixtures/` for `test`. A test that reads a file from outside its package and its dependencies must list that file in the package's own `turbo.json` (see [`apps/docs-site/turbo.json`](apps/docs-site/turbo.json)), or CI can replay a stale pass after the file changes.
 
 ### Multi-engine fixture
 
@@ -64,6 +68,8 @@ pnpm lab ask --db postgres --model live "…"       # the live OpenAI model, any
 pnpm lab ui                                       # one input on the engines you pick, side by side, replay or live, raw or client
 pnpm lab:test
 pnpm lab:matrix                                   # the suite as a scenario × dialect table (.lab/matrix.json)
+pnpm lab:matrix --shard=1/2                       # one shard of it (.lab/matrix.shard-1.json); each shard needs its own fixture
+pnpm lab:matrix:merge <dir-or-files>              # every shard's file → .lab/matrix.json, the table and the exit code
 pnpm lab:use --restore                            # before committing: restore the lab's manifests
 pnpm lab:down                                     # stop the fixture; its data and the lab install stay
 pnpm lab:reset                                    # start over: fixture reseeded, committed baseline reinstalled
@@ -73,7 +79,7 @@ pnpm lab:reset                                    # start over: fixture reseeded
 
 On the replay model, `lab ask` answers only questions in the lab's catalog, from hand-written replies per dialect (`--model live` answers anything and grades catalog questions against the oracle); adding a question means adding its replies and its oracle, the expected answer computed from the seed data, which `test/results.test.ts` compares with the rows every engine returns (see the lab README).
 
-Lab test names start with `[<dialect>] <scenario-id>`, which is how `lab:matrix` places each result; the cell values and how to mark a known bug are in the [lab README](examples/consumer-lab/README.md#the-matrix). `lab:matrix` exits non-zero on any `FAIL` cell, and CI's `consumer-lab` job runs it on every pull request (docs-only ones excepted) against tarballs packed from the PR; see [In CI](examples/consumer-lab/README.md#in-ci).
+Lab test names start with `[<dialect>] <scenario-id>`, which is how `lab:matrix` places each result; the cell values and how to mark a known bug are in the [lab README](examples/consumer-lab/README.md#the-matrix). `lab:matrix` exits non-zero on any `FAIL` cell, and CI's `consumer-lab` job runs it on every pull request (docs-only ones excepted) against tarballs packed from the PR; see [In CI](examples/consumer-lab/README.md#in-ci). `--shard=<i>/<n>` splits the suite's files between machines by what each costs in CI (`examples/consumer-lab/src/matrix-shards.ts`, whose weights a new test file joins at a default until it's measured), and `lab:matrix:merge` gives the matrix and exit code the unsharded run would have; see [Sharding](examples/consumer-lab/README.md#sharding).
 
 `lab:use` rewrites the lab's `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml`. The committed versions are the `npm:latest` baseline, so don't commit them after any other target (a tarball install writes `file:` paths into them). To refresh the baseline after a release ships, run `pnpm lab:use npm:latest`, commit those three files, and delete the entries for older releases from `examples/consumer-lab/known-release-failures.json` (every step is in `.agents/skills/consumer-lab/baseline-refresh.md`). Unlike the package suites above, lab tests don't use `integrationSuite()`: the lab exists to run against real databases, so a missing fixture or install fails the suite instead of skipping it. The one exception is an older target that lacks a documented capability a scenario needs: that scenario reports `n/a (capability: …)` (see the lab README).
 
@@ -83,7 +89,11 @@ The workspace root lists `@askdb/config` as a dev dependency so Node can resolve
 
 ## Dependency Audit
 
-CI's `audit` job (and `pnpm preflight`) runs `pnpm run audit` — [`audit-ci`](https://github.com/IBM/audit-ci) over `pnpm audit`, failing on any advisory of **moderate** severity or higher, in any dependency (dev-only ones included). Configuration lives in [`.audit-ci.json`](.audit-ci.json).
+`pnpm run audit` runs [`audit-ci`](https://github.com/IBM/audit-ci) over `pnpm audit`, failing on any advisory of **moderate** severity or higher, in any dependency (dev-only ones included). Configuration lives in [`.audit-ci.json`](.audit-ci.json). It runs in three places:
+
+- **CI's `audit` job**, on a PR or push to `main` that changes a dependency file: any `package.json` or `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.audit-ci.json` or `.npmrc` (`scripts/ci-changes.sh`). Other changes skip it, so a new advisory against a dependency already on `main` doesn't fail unrelated PRs.
+- **The daily scheduled audit** of `main` ([`audit-scheduled.yml`](.github/workflows/audit-scheduled.yml), also runnable by hand from the Actions tab). When it fails, it opens an issue titled "Dependency audit fails on main", or comments on the open one, naming the advisories. Fix it with the `repair-dependency-audit` skill and the steps below. The fixing PR changes a dependency file, so CI's `audit` job checks it.
+- **`pnpm preflight`**, locally, on every run.
 
 When it fails, prefer fixing over allowlisting:
 
@@ -93,7 +103,7 @@ When it fails, prefer fixing over allowlisting:
 
 | Advisory | Package / path | Why it is not exploitable here | Remove when |
 | --- | --- | --- | --- |
-| GHSA-fc5q-39xc-vjpf | `picomatch` <= 4.0.7 (2.3.2 and 4.0.7 installed) via `@changesets/cli` (release tooling, workspace root), `vitest` and `vite` (workspace root, and the `vitest` devDependency of each `packages/*` package, `apps/cli` and `apps/http-api`), `@tailwindcss/vite` (`apps/studio`) and `astro`, `@astrojs/*`, `starlight-llms-txt` (`apps/docs-site`) | High severity: an attacker-supplied glob such as `+(*)` makes the compiled regex backtrack exponentially against a short string. Every path is build, test, docs or release tooling that compiles the repo's own fixed globs, so no attacker chooses a pattern; `pnpm audit --prod` is clean, so no published package's runtime dependencies reach it (the paths under `packages/*`, `apps/cli` and `apps/http-api` are their `vitest` devDependency). The entries match path strings, which carry no dev/prod marker, so moving one of these roots into a published package's `dependencies` would still pass `pnpm run audit`: run `pnpm audit --prod` when a dependency changes type.. No patched `picomatch` exists on any line, and the latest `vite`, `vitest`, `tinyglobby`, `fdir`, `anymatch` and `micromatch` all still depend on it, so there is nothing to bump or override to. | `picomatch` ships a fixed release: refresh the lockfile (or override to it) and delete these entries |
+| _none_ | | The allowlist is empty. | |
 
 ## Before Opening a PR
 

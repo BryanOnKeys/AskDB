@@ -5,17 +5,66 @@ on:
     branches: [main]
   pull_request:
 
-# Cancel stale PR runs; never cancel in-progress main pushes.
+# Latest wins on every ref, `main` included: a newer push cancels the older run. Only the
+# tip of `main` can release (release.yml acts only when the commit CI tested is still the
+# tip), so an older run's result is never used. Without cancelling, the group keeps one
+# pending run and drops it for the next push anyway.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
+  # ── 0. Changes ────────────────────────────────────────────────────────────
+  # What changed, for the jobs that skip work: `docs_only` (PRs only; docs-only
+  # PRs skip test, the unit tests, preflight, consumer-lab and e2e), `deps`
+  # (audit runs only when a dependency file changed) and `smoke_input` (a docs
+  # file preflight's smoke test reads changed). The rules and the cases that
+  # run everything are in scripts/ci-changes.sh.
+  #
+  # The filters are job-level `if:`s, not a workflow-level `paths:`: a skipped
+  # job reports success, so a required check never waits on a skipped job
+  # (see changesets.yml). Each `if:` skips only on an explicit `true`/`false`
+  # from here, and uses `!cancelled()`, so a failed `changes` runs everything.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.changes.outputs.docs_only }}
+      deps: ${{ steps.changes.outputs.deps }}
+      smoke_input: ${{ steps.changes.outputs.smoke_input }}
+    steps:
+      # Full history: a push diffs against `github.event.before`, a PR against its base.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Self-test the change rules
+        run: bash scripts/ci-changes.test.sh
+
+      - name: Detect what changed
+        id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          FORCED: ${{ github.event.forced }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            bash scripts/ci-changes.sh pr "$BASE_REF" | tee -a "$GITHUB_OUTPUT"
+          else
+            bash scripts/ci-changes.sh push "$BEFORE" "$AFTER" "$FORCED" | tee -a "$GITHUB_OUTPUT"
+          fi
+
   # ── 1. Build ──────────────────────────────────────────────────────────────
-  # Compiles all packages and seeds the Turbo cache for downstream jobs.
+  # Compiles all packages, writing each build to Turbo's remote cache. No job
+  # waits for it: each one builds what it uses (turbo's `lint`, `test` and `e2e`
+  # tasks depend on the builds they need; `pnpm smoke:install` and
+  # `pnpm lab:use .` build before packing), so they all start at once.
   build:
     runs-on: ubuntu-latest
     steps:
@@ -36,24 +85,42 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Restore Turbo cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .turbo
-          key: turbo-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            turbo-${{ runner.os }}-
+      # Turbo's remote cache, kept in this repo's Actions cache as one entry per task hash (key
+      # `turbogha_<hash>`). The action starts a local server that speaks Turbo's remote cache API
+      # and exports TURBO_API, TURBO_TOKEN and TURBO_TEAM for later steps; its post step stops it.
+      # Turbo looks up each task when it reaches it and uploads each task that succeeds (failed
+      # tasks are never cached), so a job downloads only what it uses and writes only what changed.
+      # No entry grows: one GitHub hasn't served for 7 days expires.
+      # - build, lint and test write. preflight, consumer-lab and e2e only read: they rebuild what
+      #   build builds. unit-node-matrix has no remote cache, on purpose.
+      # - Access: the action gets the job's Actions runtime token, which reads this repo's caches and
+      #   writes the current ref's (a pull request's entries stay in that pull request). A fork's
+      #   pull request gets the same token, so the cache works there too. No secret is involved.
+      # - If the server can't start, turbo runs without a remote cache (continue-on-error).
+      # - When two jobs build the same changed package at once, both upload it and the second
+      #   upload logs a "Cache not saved" warning. It is harmless: the first upload is the entry.
+      - name: Set up Turbo's remote cache
+        uses: rharkor/caching-for-turbo@760158c05c47e7a764f78e9a22ca3b5a6ed8c52e # v2.5.2
+        continue-on-error: true
 
       - name: Build all packages
         run: pnpm build
 
   # ── 1b. Lint ──────────────────────────────────────────────────────────────
-  # Every package's `lint` task: `tsc --noEmit` for the libraries/apps, plus
-  # Studio's eslint + `tsconfig.web.json` typecheck and the docs site's
-  # `astro check`. None of these run anywhere else in CI. Turbo replays the
-  # upstream `build` outputs (`lint` depends on `^build`) from the cache.
+  # oxlint over the whole repo (root `.oxlintrc.json`, warnings fail), then every
+  # package's `lint` task: `tsc --noEmit` for the libraries/apps, plus Studio's
+  # `tsconfig.web.json` typecheck and the docs site's `astro check`. None of
+  # these run anywhere else in CI. `lint` depends on `^build`, so turbo builds
+  # (or replays from its cache) what each package imports.
+  #
+  # On docs-only PRs, where `test` doesn't run, it also runs the tests that read
+  # docs: the docs site's own suite (its build, links and prose checks) and the
+  # CLI's, which check the Quickstart page and the ADRs its help text names.
+  # `!cancelled()`: if `changes` fails, lint still runs (a skipped required check
+  # would pass).
   lint:
-    needs: build
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -73,22 +140,37 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Restore Turbo cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .turbo
-          key: turbo-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            turbo-${{ runner.os }}-
+      # Reads and writes Turbo's remote cache; see the build job. A package whose lint inputs
+      # haven't changed replays its last passing lint.
+      - name: Set up Turbo's remote cache
+        uses: rharkor/caching-for-turbo@760158c05c47e7a764f78e9a22ca3b5a6ed8c52e # v2.5.2
+        continue-on-error: true
 
       - name: Lint + typecheck
         run: pnpm lint
 
+      # Called directly, not through turbo: the CLI's test hash doesn't cover the docs it
+      # reads, so turbo would replay a cached pass. Its spawn tests run dist/cli.js.
+      - name: Docs tests (docs-only pull requests)
+        if: needs.changes.outputs.docs_only == 'true'
+        run: |
+          pnpm -C apps/docs-site test
+          pnpm exec turbo run build --filter=askdb
+          pnpm -C apps/cli test
+
   # ── 1c. Dependency audit ──────────────────────────────────────────────────
   # `audit-ci` over `pnpm audit`, failing on moderate+ advisories. Allowlisted
   # advisories live in .audit-ci.json; each one needs a written rationale in
-  # CONTRIBUTING.md ("Dependency audit"). Independent of the build.
+  # CONTRIBUTING.md ("Dependency Audit").
+  #
+  # Runs only when a dependency file changed (`changes`' `deps` output), so a new
+  # advisory against an existing dependency doesn't turn every PR red. The daily
+  # audit-scheduled.yml run catches those on `main`. The filter is a job-level
+  # `if:`: `audit` is a required check, and a skipped job reports success. It
+  # runs unless `changes` said `deps=false`, so a failed detection still audits.
   audit:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.deps != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -115,47 +197,67 @@ jobs:
   # The published libraries declare `engines.node >=22.23.4`; this proves the
   # unit suites build and pass on Node 22 (the floor), 24 (Maintenance LTS)
   # and 26 (Active LTS). It is a clean build (no Turbo cache) so the build
-  # itself runs on each version.
+  # itself runs on each version. Keep it uncached: it is also the backstop for a
+  # cached `test` whose turbo.json inputs miss a file the tests read.
   # Integration suites skip here: no DB URLs are set, and
   # ASKDB_REQUIRE_INTEGRATION is deliberately NOT set — the `test` job below
   # owns integration coverage (on Node 22) so DB services aren't paid for twice.
+  #
+  # Docs-only PRs skip its steps, not the job. A matrix job skipped by a job-level
+  # `if:` reports one check under the unexpanded name, never the three required
+  # `unit (Node N)` checks, which then stay pending (actions/runner#952). Running
+  # the job with every step skipped reports each of them as a success.
   unit-node-matrix:
     name: unit (Node ${{ matrix.node }})
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
+    env:
+      DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
     strategy:
       fail-fast: false
       matrix:
         node: ["22", "24", "26"]
     steps:
+      - name: Docs-only pull request
+        if: env.DOCS_ONLY == 'true'
+        run: echo "Docs-only pull request; skipping the unit tests (lint runs the docs tests)."
+
       - name: Checkout
+        if: env.DOCS_ONLY != 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Setup pnpm
+        if: env.DOCS_ONLY != 'true'
         uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
 
       - name: Setup Node.js
+        if: env.DOCS_ONLY != 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
 
       - name: Node version
+        if: env.DOCS_ONLY != 'true'
         run: node --version
 
       - name: Install dependencies
+        if: env.DOCS_ONLY != 'true'
         run: pnpm install --frozen-lockfile
 
       # Each package's vitest run records its counts in ASKDB_TEST_SUMMARY_DIR
       # (scripts/test-utils/summary-reporter.mjs); the next step renders one table.
       - name: Build + unit tests
+        if: env.DOCS_ONLY != 'true'
         run: pnpm test
         env:
           ASKDB_TEST_SUMMARY_DIR: ${{ runner.temp }}/test-summary
 
       - name: Test summary
-        if: always()
+        if: always() && env.DOCS_ONLY != 'true'
         env:
           ASKDB_TEST_SUMMARY_DIR: ${{ runner.temp }}/test-summary
           TITLE: Unit tests (Node ${{ matrix.node }})
@@ -164,8 +266,11 @@ jobs:
   # ── 2. Test ───────────────────────────────────────────────────────────────
   # Runs unit + integration tests. Turbo replays build outputs from cache so
   # packages are not rebuilt. DB services start in parallel with job setup.
+  # Docs-only PRs skip it (a skipped job reports success); lint runs the docs
+  # tests there. `!= 'true'`: a failed `changes` job still runs it.
   test:
-    needs: build
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-latest
 
     services:
@@ -231,13 +336,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Restore Turbo cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .turbo
-          key: turbo-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            turbo-${{ runner.os }}-
+      # Reads and writes Turbo's remote cache; see the build job. A package whose test inputs
+      # (turbo.json `test`: its files, fixtures, the env above) haven't changed replays its last
+      # passing run, and the test summary lists it as cached.
+      - name: Set up Turbo's remote cache
+        uses: rharkor/caching-for-turbo@760158c05c47e7a764f78e9a22ca3b5a6ed8c52e # v2.5.2
+        continue-on-error: true
 
       - name: Create SQL Server test database
         run: >-
@@ -275,10 +379,17 @@ jobs:
   # ── 3. Preflight ──────────────────────────────────────────────────────────
   # Release smoke test + publish dry-run. Runs in parallel with `test` so
   # packaging failures surface without waiting for the full DB test suite.
-  # smoke:install rebuilds packages internally; turbo cache is restored as a
-  # safety net for any direct `pnpm build` calls.
+  # smoke:install builds the packages through Turbo, which replays unchanged
+  # builds from the remote cache.
+  #
+  # Docs-only PRs skip it, unless they change a file the smoke test reads: a
+  # package's README.md (it ships in the tarball, and the smoke test checks its
+  # links) or the Quickstart page (quickstart-example.sh runs its steps).
   preflight:
-    needs: build
+    needs: changes
+    if: >-
+      ${{ !cancelled() && (needs.changes.outputs.docs_only != 'true' ||
+      needs.changes.outputs.smoke_input == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -298,13 +409,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Restore Turbo cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .turbo
-          key: turbo-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            turbo-${{ runner.os }}-
+      # smoke:install builds through Turbo (scripts/pack-tarballs.sh runs `pnpm build`), so it
+      # replays builds from Turbo's remote cache. Read-only; see the build job.
+      - name: Set up Turbo's remote cache
+        uses: rharkor/caching-for-turbo@760158c05c47e7a764f78e9a22ca3b5a6ed8c52e # v2.5.2
+        continue-on-error: true
+
+      - name: Read Turbo's remote cache without writing to it
+        run: echo "TURBO_CACHE=local:rw,remote:r" >> "$GITHUB_ENV"
 
       # The release scripts: the prerelease counter (`pnpm version-packages` in the Version
       # PR), the unpublished-version guard (changesets.yml) and the Version PR merge check
@@ -320,59 +432,35 @@ jobs:
       - name: "@askdb/ai tests at the AI SDK peer floors"
         run: pnpm test:ai-floors
 
+      # Packs what's in each package's dist/, which `pnpm smoke:install` above built.
       - name: Validate publish (dry-run)
         run: pnpm -r publish --dry-run --no-git-checks --access=public
 
   # ── 4. Consumer lab ───────────────────────────────────────────────────────
   # Packs this commit's publishable packages into tarballs, installs them into
   # examples/consumer-lab (its own pnpm root, outside the workspace) and runs
-  # the lab's scenario × dialect matrix against the multi-engine fixture. The
-  # job fails on any FAIL cell (the matrix reporter sets the exit code) and
-  # passes on pass / n/a / known. The table lands in the job summary and
-  # .lab/matrix.json is uploaded, pass or fail.
+  # the lab's scenario × dialect matrix against the multi-engine fixture.
   #
-  # Docs-only PRs skip it. The filter is a job-level `if:` on `lab-changes`,
-  # not a workflow-level `paths:`: a skipped job reports success, so this check
-  # can be made required without blocking docs-only PRs (see changesets.yml).
-  lab-changes:
-    runs-on: ubuntu-latest
-    outputs:
-      lab: ${{ steps.changes.outputs.lab }}
-    steps:
-      - name: Checkout
-        if: github.event_name == 'pull_request'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      # Docs-only = every changed file is under apps/docs-site/ or docs/,
-      # a top-level *.md, or a README.md / CHANGELOG.md. Other Markdown is not
-      # docs-only: schema artifacts (fixtures/schemas/**, lab overlays) are .md.
-      - name: Detect docs-only pull requests
-        id: changes
-        env:
-          EVENT: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          if [ "$EVENT" != "pull_request" ]; then
-            echo "lab=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          changed="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
-          if [ -n "$changed" ] && ! printf '%s\n' "$changed" \
-            | grep -Eqv '^(apps/docs-site/|docs/)|^[^/]+\.md$|(^|/)(README|CHANGELOG)\.md$'; then
-            echo "lab=false" >> "$GITHUB_OUTPUT"
-            echo "Docs-only pull request; skipping the consumer lab."
-          else
-            echo "lab=true" >> "$GITHUB_OUTPUT"
-          fi
-
-  consumer-lab:
-    needs: [build, lab-changes]
-    if: needs.lab-changes.outputs.lab == 'true'
+  # The matrix runs as two shards, each on its own runner with its own fixture:
+  # one vitest run saturates a 4-vCPU runner, and the lab's MatrixSequencer
+  # (examples/consumer-lab/src/matrix-shards.ts) splits the files by their CI
+  # cost. Each shard uploads .lab/matrix.shard-<i>.json; the `consumer-lab` job
+  # merges them into .lab/matrix.json, prints the table to the job summary and
+  # fails on any FAIL cell, a failed or missing shard, or a failed shard or
+  # safety-proofs job (`consumer-lab (safety proofs)` runs beside the shards).
+  # It passes on pass / n/a / known. `consumer-lab` keeps the required check's name.
+  #
+  # Docs-only PRs skip it, by `changes`' `docs_only` output (job 0).
+  consumer-lab-shard:
+    name: consumer-lab (shard ${{ matrix.shard }}/2)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     env:
       ASKDB_FIXTURE_HOST: 127.0.0.1
     steps:
@@ -401,27 +489,106 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Restore Turbo cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .turbo
-          key: turbo-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            turbo-${{ runner.os }}-
+      # `lab:use .` builds through Turbo (scripts/pack-tarballs.sh runs `pnpm build`), so it
+      # replays builds from Turbo's remote cache. Read-only; see the build job.
+      - name: Set up Turbo's remote cache
+        uses: rharkor/caching-for-turbo@760158c05c47e7a764f78e9a22ca3b5a6ed8c52e # v2.5.2
+        continue-on-error: true
+
+      - name: Read Turbo's remote cache without writing to it
+        run: echo "TURBO_CACHE=local:rw,remote:r" >> "$GITHUB_ENV"
 
       - name: Pack this commit's tarballs and install them in the lab
         run: pnpm lab:use .
 
       # lab:up starts and seeds the fixture, starts the lab's own Postgres (tenant-rls seeds it),
-      # then keeps the install above.
-      - name: Run the consumer lab matrix
-        run: pnpm lab:matrix
+      # then keeps the install above. The shard prints its own table and writes
+      # .lab/matrix.shard-<i>.json; the `consumer-lab` job merges the shards.
+      - name: Run the consumer lab matrix (shard ${{ matrix.shard }}/2)
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: pnpm lab:matrix "--shard=${SHARD}/2"
 
-      # The safety cases' effect proofs (#323), on a disposable second fixture (compose project
-      # askdb-lab-isolated, ports 25432/23306/23307/21433), never the shared one started above.
-      # The runner starts, seeds, tests and removes it, including after a failure. About a minute.
+      - name: Upload the shard's matrix
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: consumer-lab-matrix-shard-${{ matrix.shard }}
+          path: examples/consumer-lab/.lab/matrix.shard-${{ matrix.shard }}.json
+          if-no-files-found: warn
+          # .lab/ is a dot-directory, which upload-artifact skips by default.
+          include-hidden-files: true
+
+  # The safety cases' effect proofs (#323), on a disposable second fixture (compose project
+  # askdb-lab-isolated, ports 25432/23306/23307/21433). The runner starts, seeds, tests and
+  # removes it, including after a failure. About a minute, on its own runner so it runs beside
+  # the shards instead of after one of them.
+  consumer-lab-safety:
+    name: consumer-lab (safety proofs)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Read-only, like the shards; see the build job.
+      - name: Set up Turbo's remote cache
+        uses: rharkor/caching-for-turbo@760158c05c47e7a764f78e9a22ca3b5a6ed8c52e # v2.5.2
+        continue-on-error: true
+
+      - name: Read Turbo's remote cache without writing to it
+        run: echo "TURBO_CACHE=local:rw,remote:r" >> "$GITHUB_ENV"
+
+      - name: Pack this commit's tarballs and install them in the lab
+        run: pnpm lab:use .
+
       - name: Prove the safety cases' effects on an isolated fixture copy
         run: pnpm lab:safety:isolated
+
+  # Merges the shards (`pnpm lab:matrix:merge`, run with plain Node: it imports only Node's
+  # built-ins, so this job needs no install).
+  # It runs whenever the shards ran, pass or fail, so the merged table always lands in the
+  # job summary; a missing shard file fails the merge (exit 2), not silently passes.
+  consumer-lab:
+    needs: [changes, consumer-lab-shard, consumer-lab-safety]
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Download the shards' matrices
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: consumer-lab-matrix-shard-*
+          path: lab-shards
+
+      - name: Merge the shards into one matrix
+        run: node examples/consumer-lab/src/matrix-merge.mjs lab-shards
 
       - name: Upload the matrix
         if: always()
@@ -432,3 +599,101 @@ jobs:
           if-no-files-found: warn
           # .lab/ is a dot-directory, which upload-artifact skips by default.
           include-hidden-files: true
+
+      # A shard can fail outside the matrix (install, lab:use) and still upload a clean shard
+      # file, and the safety proofs write no matrix, so the merge alone isn't the verdict.
+      - name: Fail if a shard or the safety proofs failed
+        if: ${{ needs.consumer-lab-shard.result != 'success' || needs.consumer-lab-safety.result != 'success' }}
+        env:
+          SHARDS: ${{ needs.consumer-lab-shard.result }}
+          SAFETY: ${{ needs.consumer-lab-safety.result }}
+        run: |
+          echo "::error::consumer-lab shards: ${SHARDS}; safety proofs: ${SAFETY}"
+          exit 1
+
+  # ── 5. verify-askdb replays ──────────────────────────────────────────────
+  # The scripted journeys of verify-askdb's feature map (e2e/): the askdb CLI and HTTP API
+  # under Vitest, Studio under Playwright, each in a disposable project with a fake model.
+  # Docs-only PRs skip it, by the same filter as the consumer lab. Evidence and Playwright's
+  # report are uploaded, pass or fail.
+  e2e:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `pnpm e2e` builds what the replays drive (`e2e` depends on `^build`) and replays those
+      # builds from Turbo's remote cache. Read-only; see the build job.
+      - name: Set up Turbo's remote cache
+        uses: rharkor/caching-for-turbo@760158c05c47e7a764f78e9a22ca3b5a6ed8c52e # v2.5.2
+        continue-on-error: true
+
+      - name: Read Turbo's remote cache without writing to it
+        run: echo "TURBO_CACHE=local:rw,remote:r" >> "$GITHUB_ENV"
+
+      # Chromium is cached per Playwright version, which pins its browser build. The
+      # version comes from the installed CLI: the lockfile also holds other playwright-core
+      # versions. The system libraries aren't cached, so a hit still installs them.
+      - name: Find the Playwright version
+        id: playwright
+        run: |
+          version="$(pnpm -C e2e exec playwright --version | awk '{print $NF}')"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] || { echo "Unexpected Playwright version: '$version'" >&2; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Playwright's Chromium
+        id: playwright-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+
+      - name: Install Playwright's Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm -C e2e exec playwright install --with-deps chromium
+
+      # Saved right after the install, so a failing replay doesn't throw the download away.
+      - name: Save Playwright's Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ steps.playwright-cache.outputs.cache-primary-key }}
+
+      - name: Install Chromium's system dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm -C e2e exec playwright install-deps chromium
+
+      # The runner context isn't available in a job-level env, so the evidence root is set here.
+      - name: Run the replays
+        env:
+          ASKDB_VERIFY_ROOT: ${{ runner.temp }}/askdb-verify
+        run: pnpm e2e
+
+      - name: Upload evidence and the Playwright report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-evidence
+          path: |
+            ${{ runner.temp }}/askdb-verify
+            e2e/playwright-report
+            e2e/test-results
+          if-no-files-found: warn
